@@ -55,7 +55,7 @@ def setup_persistent_session(user_data_path, target_login_url="https://x.com"):
             
             context = p.chromium.launch_persistent_context(
                 user_data_dir=user_data_path,
-                executable_path="/usr/bin/google-chrome-stable",
+                executable_path="C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
                 headless=False,
                 env=browser_env,
                 args=[
@@ -138,7 +138,7 @@ def force_join_community(profile, comm_url):
         try:
             context = p.chromium.launch_persistent_context(
                 user_data_dir=user_data_dir,
-                executable_path="/usr/bin/google-chrome-stable",
+                executable_path="C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
                 headless=False,
                 args=["--disable-blink-features=AutomationControlled", "--disable-infobars"],
                 ignore_default_args=["--enable-automation"]
@@ -224,7 +224,7 @@ def fetch_joined_communities(profile):
         try:
             context = p.chromium.launch_persistent_context(
                 user_data_dir=user_data_dir,
-                executable_path="/usr/bin/google-chrome-stable",
+                executable_path="C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
                 headless=False,
                 args=["--disable-blink-features=AutomationControlled", "--disable-infobars"],
                 ignore_default_args=["--enable-automation"]
@@ -331,7 +331,7 @@ def fetch_joined_communities_manual(profile):
         try:
             context = p.chromium.launch_persistent_context(
                 user_data_dir=user_data_dir,
-                executable_path="/usr/bin/google-chrome-stable",
+                executable_path="C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
                 headless=False,
                 args=[
                     "--disable-blink-features=AutomationControlled",
@@ -444,7 +444,7 @@ def check_cloudflare_status(profile):
         try:
             context = p.chromium.launch_persistent_context(
                 user_data_dir=user_data_dir,
-                executable_path="/usr/bin/google-chrome-stable",
+                executable_path="C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
                 headless=False,
                 args=[
                     "--disable-blink-features=AutomationControlled",
@@ -510,7 +510,7 @@ def process_profile(profile, user_tweet_text, uploaded_media_path=None, selected
         try:
             context = p.chromium.launch_persistent_context(
                 user_data_dir=user_data_dir,
-                executable_path="/usr/bin/google-chrome-stable",
+                executable_path="C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
                 headless=False,
                 args=[
                     "--disable-blink-features=AutomationControlled",
@@ -877,7 +877,7 @@ def process_auto_responder(profile, universal_msg, check_priority=True, check_hi
         try:
             context = p.chromium.launch_persistent_context(
                 user_data_dir=user_data_dir,
-                executable_path="/usr/bin/google-chrome-stable",
+                executable_path="C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
                 headless=False,
                 args=[
                     "--disable-blink-features=AutomationControlled",

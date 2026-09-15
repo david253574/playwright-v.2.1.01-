@@ -110,8 +110,8 @@ def process_profile(profile, user_tweet_text, uploaded_media_path=None, selected
         try:
             context = p.chromium.launch_persistent_context(
                 user_data_dir=user_data_dir,
-                executable_path="/usr/bin/google-chrome-stable",
-                headless=False,
+                executable_path="C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+                headless=True,
                 args=[
                     "--disable-blink-features=AutomationControlled",
                     "--disable-infobars",
