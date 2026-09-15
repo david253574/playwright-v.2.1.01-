@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+venv/
+
+# Browser Profiles
+chrome_profile/
+chrome_debug_profile/
+chrome_profile_test/
+user_data/
+
+# Logs
+*.log
+
+# Debug Media & Dumps
+debug_*.png
+captcha_alert.png
+join_fail_debug.png
+test*.png
+*debug*.html
+dom_*.txt
+community_buttons.txt
+
+# Local State & Cache
+bot_status.json
+communities_cache.json
+community_cycle_history.json
+daily_post_history.json
+login_needed.json
+saved_drafts.json
+scheduled_queue.json
+
+# Temp Directories
+scheduled_uploads/
+temp_uploads/

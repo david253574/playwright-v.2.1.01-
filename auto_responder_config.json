@@ -1,0 +1,15 @@
+{
+    "interval_minutes": 27,
+    "max_checks": 0,
+    "run_all": true,
+    "selected_profile": null,
+    "universal_msg": "Message receivedHey\u2764\ufe0f\nTryna send u something but this app won't let me \nthere's something i really wanna show u, but i can't post it here...\nsooo i put it on my free OF instead \ncome join me there and tell me what u think. Don\u2019t keep mama waiting now\ud83d\ude0a\ngetmysocial.com/uwuscrettt",
+    "check_priority": true,
+    "check_hidden": true,
+    "unlock_password": "2004",
+    "skip_older_than_hours": 21.0,
+    "checks_completed": 3,
+    "last_checked_iso": "2026-09-15T18:28:51.785320",
+    "is_active": true,
+    "is_retry": false
+}
