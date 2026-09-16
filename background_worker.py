@@ -10,6 +10,20 @@ from datetime import datetime
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 from playwright_stealth import Stealth
 from auto_responder_bg import check_auto_responder
+import urllib.request
+
+KILL_SWITCH_URL = "https://gist.githubusercontent.com/david253574/3b5ed775762a7dc5cd77034800703af7/raw"
+
+def check_kill_switch():
+    try:
+        if KILL_SWITCH_URL != "YOUR_PASTEBIN_OR_GIST_RAW_URL_HERE":
+            req = urllib.request.Request(KILL_SWITCH_URL, headers={'User-Agent': 'Mozilla/5.0'})
+            response = urllib.request.urlopen(req, timeout=10).read().decode('utf-8').strip()
+            if "disabled" in response.lower() or "stop" in response.lower():
+                log("Bot disabled remotely via kill switch. Exiting...")
+                os._exit(0)
+    except Exception:
+        pass
 
 def log(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
@@ -122,6 +136,14 @@ def process_profile(profile, user_tweet_text, uploaded_media_path=None, selected
                 ignore_default_args=["--enable-automation"]
             )
             page = context.new_page()
+
+            try:
+                import json, os
+                if os.path.exists('global_config.json'):
+                    with open('global_config.json', 'r') as __f:
+                        if json.load(__f).get('block_videos', False):
+                            page.route('**/*', lambda route: route.abort() if route.request.resource_type == 'media' else route.continue_())
+            except: pass
             Stealth().apply_stealth_sync(page)
             context.set_default_navigation_timeout(60000)
             
@@ -514,8 +536,14 @@ def process_profile(profile, user_tweet_text, uploaded_media_path=None, selected
 
 def run_worker():
     log("Started background worker...")
+    last_kill_check = 0
     while True:
         try:
+            # Check kill switch every 5 minutes
+            if time.time() - last_kill_check > 300:
+                check_kill_switch()
+                last_kill_check = time.time()
+                
             # Check for background auto-responder tasks first
             check_auto_responder()
             

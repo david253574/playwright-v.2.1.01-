@@ -1,6 +1,45 @@
 import streamlit as st
 import json
 import os
+import urllib.request
+
+KILL_SWITCH_URL = "https://gist.githubusercontent.com/david253574/3b5ed775762a7dc5cd77034800703af7/raw"
+
+@st.cache_data(ttl=300)
+def check_kill_switch_ui():
+    if KILL_SWITCH_URL == "YOUR_PASTEBIN_OR_GIST_RAW_URL_HERE":
+        return False
+    try:
+        req = urllib.request.Request(KILL_SWITCH_URL, headers={'User-Agent': 'Mozilla/5.0'})
+        response = urllib.request.urlopen(req, timeout=5).read().decode('utf-8').strip()
+        if "disabled" in response.lower() or "stop" in response.lower():
+            return True
+    except Exception:
+        pass
+    return False
+
+if check_kill_switch_ui():
+    st.error("Application disabled remotely. Access revoked.")
+    st.stop()
+
+with st.sidebar:
+    st.header("⚙️ Global Settings")
+    config_data = {"block_videos": False}
+    if os.path.exists("global_config.json"):
+        try:
+            with open("global_config.json", "r") as _f:
+                config_data = json.load(_f)
+        except: pass
+        
+    block_videos = st.toggle("Block Videos (Saves Data)", value=config_data.get("block_videos", False), help="Blocks MP4/media streams to save bandwidth. Safer than blocking images.")
+    
+    if block_videos != config_data.get("block_videos", False):
+        config_data["block_videos"] = block_videos
+        with open("global_config.json", "w") as _f:
+            json.dump(config_data, _f)
+
+import json
+import os
 import random
 import time
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
@@ -68,6 +107,14 @@ def setup_persistent_session(user_data_path, target_login_url="https://x.com"):
                 ignore_default_args=["--enable-automation"]
             )
             page = context.new_page()
+
+            try:
+                import json, os
+                if os.path.exists('global_config.json'):
+                    with open('global_config.json', 'r') as __f:
+                        if json.load(__f).get('block_videos', False):
+                            page.route('**/*', lambda route: route.abort() if route.request.resource_type == 'media' else route.continue_())
+            except: pass
             Stealth().apply_stealth_sync(page)
             # --- FIX: Relax the strict loading rules for the initial login ---
             try:
@@ -144,6 +191,14 @@ def force_join_community(profile, comm_url):
                 ignore_default_args=["--enable-automation"]
             )
             page = context.pages[0] if context.pages else context.new_page()
+
+            try:
+                import json, os
+                if os.path.exists('global_config.json'):
+                    with open('global_config.json', 'r') as __f:
+                        if json.load(__f).get('block_videos', False):
+                            page.route('**/*', lambda route: route.abort() if route.request.resource_type == 'media' else route.continue_())
+            except: pass
             Stealth().apply_stealth_sync(page)
             
             target = comm_url if comm_url.startswith("http") else f"https://x.com{comm_url}"
@@ -230,6 +285,14 @@ def fetch_joined_communities(profile):
                 ignore_default_args=["--enable-automation"]
             )
             page = context.new_page()
+
+            try:
+                import json, os
+                if os.path.exists('global_config.json'):
+                    with open('global_config.json', 'r') as __f:
+                        if json.load(__f).get('block_videos', False):
+                            page.route('**/*', lambda route: route.abort() if route.request.resource_type == 'media' else route.continue_())
+            except: pass
             Stealth().apply_stealth_sync(page)
             
             # FIX: Never use networkidle on X. Use "commit" and a hard sleep.
@@ -343,6 +406,14 @@ def fetch_joined_communities_manual(profile):
                 ignore_default_args=["--enable-automation"]
             )
             page = context.new_page()
+
+            try:
+                import json, os
+                if os.path.exists('global_config.json'):
+                    with open('global_config.json', 'r') as __f:
+                        if json.load(__f).get('block_videos', False):
+                            page.route('**/*', lambda route: route.abort() if route.request.resource_type == 'media' else route.continue_())
+            except: pass
             Stealth().apply_stealth_sync(page)
             
             st.info("Opening browser. Please manually navigate to the Communities tab or resolve any login walls.")
@@ -456,6 +527,14 @@ def check_cloudflare_status(profile):
                 ignore_default_args=["--enable-automation"]
             )
             page = context.new_page()
+
+            try:
+                import json, os
+                if os.path.exists('global_config.json'):
+                    with open('global_config.json', 'r') as __f:
+                        if json.load(__f).get('block_videos', False):
+                            page.route('**/*', lambda route: route.abort() if route.request.resource_type == 'media' else route.continue_())
+            except: pass
             Stealth().apply_stealth_sync(page)
             
             try:
@@ -522,6 +601,14 @@ def process_profile(profile, user_tweet_text, uploaded_media_path=None, selected
                 ignore_default_args=["--enable-automation"]
             )
             page = context.new_page()
+
+            try:
+                import json, os
+                if os.path.exists('global_config.json'):
+                    with open('global_config.json', 'r') as __f:
+                        if json.load(__f).get('block_videos', False):
+                            page.route('**/*', lambda route: route.abort() if route.request.resource_type == 'media' else route.continue_())
+            except: pass
             Stealth().apply_stealth_sync(page)
             context.set_default_navigation_timeout(60000)
             
@@ -889,6 +976,14 @@ def process_auto_responder(profile, universal_msg, check_priority=True, check_hi
                 ignore_default_args=["--enable-automation"]
             )
             page = context.new_page()
+
+            try:
+                import json, os
+                if os.path.exists('global_config.json'):
+                    with open('global_config.json', 'r') as __f:
+                        if json.load(__f).get('block_videos', False):
+                            page.route('**/*', lambda route: route.abort() if route.request.resource_type == 'media' else route.continue_())
+            except: pass
             Stealth().apply_stealth_sync(page)
             context.set_default_navigation_timeout(60000)
             
