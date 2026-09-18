@@ -28,6 +28,8 @@ daily_post_history.json
 login_needed.json
 saved_drafts.json
 scheduled_queue.json
+profiles.json
+auto_responder_config.json
 
 # Temp Directories
 scheduled_uploads/
