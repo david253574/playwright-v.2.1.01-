@@ -7,7 +7,7 @@ os.environ["DISPLAY"] = ":0" # Assuming the user's display is :0
 with sync_playwright() as p:
     try:
         browser = p.chromium.launch(
-            executable_path="C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+            executable_path="/usr/bin/google-chrome-stable",
             headless=False,
             env=os.environ
         )

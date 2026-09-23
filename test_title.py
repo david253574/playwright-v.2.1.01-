@@ -3,7 +3,7 @@ def run():
     with sync_playwright() as p:
         context = p.chromium.launch_persistent_context(
             user_data_dir="/home/david/Desktop/playwright/user_data/account1",
-            executable_path="C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+            executable_path="/usr/bin/google-chrome-stable",
             headless=True,
             args=["--disable-blink-features=AutomationControlled"],
             ignore_default_args=["--enable-automation"]

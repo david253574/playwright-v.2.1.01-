@@ -5,7 +5,7 @@ def main():
     with sync_playwright() as p:
         b = p.chromium.launch_persistent_context(
             user_data_dir='./user_data/account 23',
-            executable_path='C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+            executable_path='/usr/bin/google-chrome-stable',
             headless=False,
             args=['--disable-blink-features=AutomationControlled']
         )

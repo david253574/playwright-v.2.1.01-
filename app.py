@@ -1,26 +1,6 @@
 import streamlit as st
 import json
 import os
-import urllib.request
-
-KILL_SWITCH_URL = "https://gist.githubusercontent.com/david253574/3b5ed775762a7dc5cd77034800703af7/raw"
-
-@st.cache_data(ttl=300)
-def check_kill_switch_ui():
-    if KILL_SWITCH_URL == "YOUR_PASTEBIN_OR_GIST_RAW_URL_HERE":
-        return False
-    try:
-        req = urllib.request.Request(KILL_SWITCH_URL, headers={'User-Agent': 'Mozilla/5.0'})
-        response = urllib.request.urlopen(req, timeout=5).read().decode('utf-8').strip()
-        if "disabled" in response.lower() or "stop" in response.lower():
-            return True
-    except Exception:
-        pass
-    return False
-
-if check_kill_switch_ui():
-    st.error("Application disabled remotely. Access revoked.")
-    st.stop()
 
 with st.sidebar:
     st.header("⚙️ Global Settings")
@@ -31,7 +11,7 @@ with st.sidebar:
                 config_data = json.load(_f)
         except: pass
         
-    block_videos = st.toggle("Block Videos (Saves Data)", value=config_data.get("block_videos", False), help="Blocks MP4/media streams to save bandwidth. Safer than blocking images.")
+    block_videos = st.toggle("Block Heavy Media & Ads (Saves 80% Data)", value=config_data.get("block_videos", False), help="Blocks MP4 streams, heavy post images, and background trackers to massively save bandwidth while keeping profile pictures to remain stealthy.")
     
     if block_videos != config_data.get("block_videos", False):
         config_data["block_videos"] = block_videos
@@ -94,7 +74,7 @@ def setup_persistent_session(user_data_path, target_login_url="https://x.com"):
             
             context = p.chromium.launch_persistent_context(
                 user_data_dir=user_data_path,
-                executable_path="C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+                channel="chrome",
                 headless=False,
                 env=browser_env,
                 args=[
@@ -107,14 +87,25 @@ def setup_persistent_session(user_data_path, target_login_url="https://x.com"):
                 ignore_default_args=["--enable-automation"]
             )
             page = context.new_page()
-
             try:
                 import json, os
                 if os.path.exists('global_config.json'):
                     with open('global_config.json', 'r') as __f:
                         if json.load(__f).get('block_videos', False):
-                            page.route('**/*', lambda route: route.abort() if route.request.resource_type == 'media' else route.continue_())
+                            def smart_route(route):
+                                req = route.request
+                                r_type = req.resource_type
+                                url = req.url.lower()
+                                if 'analytics' in url or 'ads-twitter.com' in url: return route.abort()
+                                if r_type == 'media' and 'ton.twimg.com' not in url: return route.abort()
+                                try: is_chat_page = 'messages' in page.url.lower()
+                                except: is_chat_page = False
+                                if r_type == 'image' and not is_chat_page:
+                                    if 'pbs.twimg.com/media/' in url or 'video.twimg.com' in url or 'ext_tw_video_thumb' in url: return route.abort()
+                                route.continue_()
+                            page.route('**/*', smart_route)
             except: pass
+
             Stealth().apply_stealth_sync(page)
             # --- FIX: Relax the strict loading rules for the initial login ---
             try:
@@ -185,20 +176,31 @@ def force_join_community(profile, comm_url):
         try:
             context = p.chromium.launch_persistent_context(
                 user_data_dir=user_data_dir,
-                executable_path="C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+                channel="chrome",
                 headless=False,
                 args=["--disable-blink-features=AutomationControlled", "--disable-infobars"],
                 ignore_default_args=["--enable-automation"]
             )
             page = context.pages[0] if context.pages else context.new_page()
-
             try:
                 import json, os
                 if os.path.exists('global_config.json'):
                     with open('global_config.json', 'r') as __f:
                         if json.load(__f).get('block_videos', False):
-                            page.route('**/*', lambda route: route.abort() if route.request.resource_type == 'media' else route.continue_())
+                            def smart_route(route):
+                                req = route.request
+                                r_type = req.resource_type
+                                url = req.url.lower()
+                                if 'analytics' in url or 'ads-twitter.com' in url: return route.abort()
+                                if r_type == 'media' and 'ton.twimg.com' not in url: return route.abort()
+                                try: is_chat_page = 'messages' in page.url.lower()
+                                except: is_chat_page = False
+                                if r_type == 'image' and not is_chat_page:
+                                    if 'pbs.twimg.com/media/' in url or 'video.twimg.com' in url or 'ext_tw_video_thumb' in url: return route.abort()
+                                route.continue_()
+                            page.route('**/*', smart_route)
             except: pass
+
             Stealth().apply_stealth_sync(page)
             
             target = comm_url if comm_url.startswith("http") else f"https://x.com{comm_url}"
@@ -279,20 +281,31 @@ def fetch_joined_communities(profile):
         try:
             context = p.chromium.launch_persistent_context(
                 user_data_dir=user_data_dir,
-                executable_path="C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+                channel="chrome",
                 headless=False,
                 args=["--disable-blink-features=AutomationControlled", "--disable-infobars"],
                 ignore_default_args=["--enable-automation"]
             )
             page = context.new_page()
-
             try:
                 import json, os
                 if os.path.exists('global_config.json'):
                     with open('global_config.json', 'r') as __f:
                         if json.load(__f).get('block_videos', False):
-                            page.route('**/*', lambda route: route.abort() if route.request.resource_type == 'media' else route.continue_())
+                            def smart_route(route):
+                                req = route.request
+                                r_type = req.resource_type
+                                url = req.url.lower()
+                                if 'analytics' in url or 'ads-twitter.com' in url: return route.abort()
+                                if r_type == 'media' and 'ton.twimg.com' not in url: return route.abort()
+                                try: is_chat_page = 'messages' in page.url.lower()
+                                except: is_chat_page = False
+                                if r_type == 'image' and not is_chat_page:
+                                    if 'pbs.twimg.com/media/' in url or 'video.twimg.com' in url or 'ext_tw_video_thumb' in url: return route.abort()
+                                route.continue_()
+                            page.route('**/*', smart_route)
             except: pass
+
             Stealth().apply_stealth_sync(page)
             
             # FIX: Never use networkidle on X. Use "commit" and a hard sleep.
@@ -394,7 +407,7 @@ def fetch_joined_communities_manual(profile):
         try:
             context = p.chromium.launch_persistent_context(
                 user_data_dir=user_data_dir,
-                executable_path="C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+                channel="chrome",
                 headless=False,
                 args=[
                     "--disable-blink-features=AutomationControlled",
@@ -406,14 +419,25 @@ def fetch_joined_communities_manual(profile):
                 ignore_default_args=["--enable-automation"]
             )
             page = context.new_page()
-
             try:
                 import json, os
                 if os.path.exists('global_config.json'):
                     with open('global_config.json', 'r') as __f:
                         if json.load(__f).get('block_videos', False):
-                            page.route('**/*', lambda route: route.abort() if route.request.resource_type == 'media' else route.continue_())
+                            def smart_route(route):
+                                req = route.request
+                                r_type = req.resource_type
+                                url = req.url.lower()
+                                if 'analytics' in url or 'ads-twitter.com' in url: return route.abort()
+                                if r_type == 'media' and 'ton.twimg.com' not in url: return route.abort()
+                                try: is_chat_page = 'messages' in page.url.lower()
+                                except: is_chat_page = False
+                                if r_type == 'image' and not is_chat_page:
+                                    if 'pbs.twimg.com/media/' in url or 'video.twimg.com' in url or 'ext_tw_video_thumb' in url: return route.abort()
+                                route.continue_()
+                            page.route('**/*', smart_route)
             except: pass
+
             Stealth().apply_stealth_sync(page)
             
             st.info("Opening browser. Please manually navigate to the Communities tab or resolve any login walls.")
@@ -515,7 +539,7 @@ def check_cloudflare_status(profile):
         try:
             context = p.chromium.launch_persistent_context(
                 user_data_dir=user_data_dir,
-                executable_path="C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+                channel="chrome",
                 headless=False,
                 args=[
                     "--disable-blink-features=AutomationControlled",
@@ -527,14 +551,25 @@ def check_cloudflare_status(profile):
                 ignore_default_args=["--enable-automation"]
             )
             page = context.new_page()
-
             try:
                 import json, os
                 if os.path.exists('global_config.json'):
                     with open('global_config.json', 'r') as __f:
                         if json.load(__f).get('block_videos', False):
-                            page.route('**/*', lambda route: route.abort() if route.request.resource_type == 'media' else route.continue_())
+                            def smart_route(route):
+                                req = route.request
+                                r_type = req.resource_type
+                                url = req.url.lower()
+                                if 'analytics' in url or 'ads-twitter.com' in url: return route.abort()
+                                if r_type == 'media' and 'ton.twimg.com' not in url: return route.abort()
+                                try: is_chat_page = 'messages' in page.url.lower()
+                                except: is_chat_page = False
+                                if r_type == 'image' and not is_chat_page:
+                                    if 'pbs.twimg.com/media/' in url or 'video.twimg.com' in url or 'ext_tw_video_thumb' in url: return route.abort()
+                                route.continue_()
+                            page.route('**/*', smart_route)
             except: pass
+
             Stealth().apply_stealth_sync(page)
             
             try:
@@ -589,7 +624,7 @@ def process_profile(profile, user_tweet_text, uploaded_media_path=None, selected
         try:
             context = p.chromium.launch_persistent_context(
                 user_data_dir=user_data_dir,
-                executable_path="C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+                channel="chrome",
                 headless=False,
                 args=[
                     "--disable-blink-features=AutomationControlled",
@@ -601,14 +636,25 @@ def process_profile(profile, user_tweet_text, uploaded_media_path=None, selected
                 ignore_default_args=["--enable-automation"]
             )
             page = context.new_page()
-
             try:
                 import json, os
                 if os.path.exists('global_config.json'):
                     with open('global_config.json', 'r') as __f:
                         if json.load(__f).get('block_videos', False):
-                            page.route('**/*', lambda route: route.abort() if route.request.resource_type == 'media' else route.continue_())
+                            def smart_route(route):
+                                req = route.request
+                                r_type = req.resource_type
+                                url = req.url.lower()
+                                if 'analytics' in url or 'ads-twitter.com' in url: return route.abort()
+                                if r_type == 'media' and 'ton.twimg.com' not in url: return route.abort()
+                                try: is_chat_page = 'messages' in page.url.lower()
+                                except: is_chat_page = False
+                                if r_type == 'image' and not is_chat_page:
+                                    if 'pbs.twimg.com/media/' in url or 'video.twimg.com' in url or 'ext_tw_video_thumb' in url: return route.abort()
+                                route.continue_()
+                            page.route('**/*', smart_route)
             except: pass
+
             Stealth().apply_stealth_sync(page)
             context.set_default_navigation_timeout(60000)
             
@@ -862,6 +908,14 @@ def process_profile(profile, user_tweet_text, uploaded_media_path=None, selected
                                     page.wait_for_timeout(2000)
                                     profile_tab = page.locator('a[data-testid="AppTabBar_Profile_Link"]')
                                     profile_href = profile_tab.get_attribute('href')
+
+                                    if "compose/post" in page.url or page.locator('div[data-testid="tweetTextarea_0"]').count() > 0:
+                                        st.warning(f"[{profile['id']}] Post seems to have failed (compose modal still open). Skipping comments.")
+                                        page.keyboard.press("Escape")
+                                        page.wait_for_timeout(1000)
+                                        page.keyboard.press("Escape")
+                                        raise Exception("Post failed to send. Modal was still open.")
+
                                     profile_tab.click(force=True)
                                     
                                     page.wait_for_url(f"**{profile_href}**", timeout=10000)
@@ -964,7 +1018,7 @@ def process_auto_responder(profile, universal_msg, check_priority=True, check_hi
         try:
             context = p.chromium.launch_persistent_context(
                 user_data_dir=user_data_dir,
-                executable_path="C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+                channel="chrome",
                 headless=False,
                 args=[
                     "--disable-blink-features=AutomationControlled",
@@ -976,14 +1030,25 @@ def process_auto_responder(profile, universal_msg, check_priority=True, check_hi
                 ignore_default_args=["--enable-automation"]
             )
             page = context.new_page()
-
             try:
                 import json, os
                 if os.path.exists('global_config.json'):
                     with open('global_config.json', 'r') as __f:
                         if json.load(__f).get('block_videos', False):
-                            page.route('**/*', lambda route: route.abort() if route.request.resource_type == 'media' else route.continue_())
+                            def smart_route(route):
+                                req = route.request
+                                r_type = req.resource_type
+                                url = req.url.lower()
+                                if 'analytics' in url or 'ads-twitter.com' in url: return route.abort()
+                                if r_type == 'media' and 'ton.twimg.com' not in url: return route.abort()
+                                try: is_chat_page = 'messages' in page.url.lower()
+                                except: is_chat_page = False
+                                if r_type == 'image' and not is_chat_page:
+                                    if 'pbs.twimg.com/media/' in url or 'video.twimg.com' in url or 'ext_tw_video_thumb' in url: return route.abort()
+                                route.continue_()
+                            page.route('**/*', smart_route)
             except: pass
+
             Stealth().apply_stealth_sync(page)
             context.set_default_navigation_timeout(60000)
             
@@ -1007,6 +1072,8 @@ def process_auto_responder(profile, universal_msg, check_priority=True, check_hi
                     passcode_text.wait_for(state="visible", timeout=10000)
                     st.info(f"[{profile['id']}] Found Encrypted DM Passcode screen. Typing PIN...")
                     pin_inputs = page.locator('div[data-testid="pin-code-input-container"] input')
+                    try: pin_inputs.first.wait_for(state="attached", timeout=5000)
+                    except: pass
                     if pin_inputs.count() >= 4:
                         for i in range(4):
                             if i < len(unlock_password):
@@ -1528,7 +1595,7 @@ with st.sidebar:
     if not os.path.exists("captcha_alert.png") and not os.path.exists("bot_status.json") and not os.path.exists("login_needed.json"):
         st.success("No active security verifications or alerts. Everything is running smoothly.")
 
-tab1, tab2, tab3 = st.tabs(["Publish Dashboard", "Manage Accounts", "Auto-Responder"])
+tab1, tab2, tab3, tab4 = st.tabs(["Publish Dashboard", "Manage Accounts", "Auto-Responder", "Promo Videos"])
 
 def load_profiles():
     try:
@@ -1542,6 +1609,13 @@ def save_profiles(data):
         json.dump(data, f, indent=4)
 
 profiles_data = load_profiles()
+
+class LocalFileWrapper:
+    def __init__(self, p):
+        self.path = p
+        self.name = os.path.basename(p)
+    def getbuffer(self):
+        with open(self.path, "rb") as f: return f.read()
 
 # TAB 1: DAILY POSTING INTERFACE
 with tab1:
@@ -1776,6 +1850,183 @@ with tab1:
                         else:
                             st.info("Vault is already empty.")
 
+            with st.expander(":material/image: Image Vault"):
+                st.write("Save images to a vault so the recurring auto-poster can pick them randomly.")
+                
+                image_vault_dir = "image_vault"
+                os.makedirs(image_vault_dir, exist_ok=True)
+                
+                vault_images_uploaded = st.file_uploader("Upload Media to Vault", type=["jpg", "jpeg", "png", "mp4", "mov"], accept_multiple_files=True, key="vault_images_uploader")
+                
+                col_save_img, col_load_img, col_clear_img = st.columns(3)
+                with col_save_img:
+                    if st.button("Save to Image Vault"):
+                        if vault_images_uploaded:
+                            saved_count = 0
+                            for img_file in vault_images_uploaded:
+                                safe_name = "".join(c for c in img_file.name if c.isalnum() or c in "._-")
+                                file_path = os.path.join(image_vault_dir, safe_name)
+                                with open(file_path, "wb") as f:
+                                    f.write(img_file.getbuffer())
+                                saved_count += 1
+                            st.success(f"Saved {saved_count} images to vault!")
+                            import time
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.warning("No images selected.")
+                            
+                with col_load_img:
+                    if st.button("Load & Reshuffle Media"):
+                        import random, os, time
+                        vault_media = []
+                        if os.path.exists("image_vault"):
+                            vault_media = [os.path.join("image_vault", f) for f in os.listdir("image_vault") if os.path.isfile(os.path.join("image_vault", f))]
+                        if vault_media:
+                            random.shuffle(vault_media)
+                            if "vault_media_assignments" not in st.session_state:
+                                st.session_state.vault_media_assignments = {}
+                                
+                            active_accts = list(communities_cache.keys())
+                            for idx, acct in enumerate(active_accts):
+                                media_idx = idx % len(vault_media)
+                                st.session_state.vault_media_assignments[acct] = LocalFileWrapper(vault_media[media_idx])
+                                
+                            st.success(f"Dealt {len(active_accts)} media files randomly!")
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.warning("Media Vault is empty.")
+                            
+                with col_clear_img:
+                    if st.button("Clear Image Vault"):
+                        import shutil
+                        if os.path.exists(image_vault_dir):
+                            shutil.rmtree(image_vault_dir)
+                        os.makedirs(image_vault_dir, exist_ok=True)
+                        st.success("Image Vault cleared!")
+                        import time
+                        time.sleep(1)
+                        st.rerun()
+                        
+                existing_images = os.listdir(image_vault_dir) if os.path.exists(image_vault_dir) else []
+                if existing_images:
+                    st.info(f"Image Vault contains {len(existing_images)} images.")
+                    with st.expander("View Vault Images"):
+                        for img_name in existing_images:
+                            st.text(f":material/image: {img_name}")
+                else:
+                    st.warning("Image Vault is empty.")
+
+            with st.expander(":material/campaign: Dedicated Promo Vault (Video + Post)"):
+                st.write("This vault is completely separate from your general drafts and images. It loads the dedicated 8 promo posts and videos.")
+                
+                promo_vault_dir = "promo_vault_media"
+                os.makedirs(promo_vault_dir, exist_ok=True)
+                
+                vault_promo_uploaded = st.file_uploader("Upload Promo Videos to Vault", type=["mp4", "mov"], accept_multiple_files=True, key="vault_promo_uploader")
+                
+                col_save_promo, col_clear_promo = st.columns(2)
+                with col_save_promo:
+                    if st.button("Save Videos to Promo Vault", use_container_width=True):
+                        if vault_promo_uploaded:
+                            saved_count = 0
+                            for vid_file in vault_promo_uploaded:
+                                safe_name = "".join(c for c in vid_file.name if c.isalnum() or c in "._-")
+                                file_path = os.path.join(promo_vault_dir, safe_name)
+                                with open(file_path, "wb") as f:
+                                    f.write(vid_file.getbuffer())
+                                saved_count += 1
+                            st.success(f"Saved {saved_count} videos to promo vault!")
+                            import time
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.warning("No videos selected.")
+                            
+                with col_clear_promo:
+                    if st.button("Clear Promo Videos", use_container_width=True):
+                        import shutil
+                        if os.path.exists(promo_vault_dir):
+                            shutil.rmtree(promo_vault_dir)
+                        os.makedirs(promo_vault_dir, exist_ok=True)
+                        st.success("Promo Videos cleared!")
+                        import time
+                        time.sleep(1)
+                        st.rerun()
+                        
+                existing_promos = os.listdir(promo_vault_dir) if os.path.exists(promo_vault_dir) else []
+                if existing_promos:
+                    st.info(f"Promo Vault contains {len(existing_promos)} videos.")
+                else:
+                    st.warning("Promo Vault has no videos.")
+                
+                st.divider()
+                
+                st.write("**Promo Text & Comments (JSON)**")
+                st.write("Paste a JSON array containing your messages and comments. Example format:")
+                st.code('[\n  {\n    "message": "Your post text here",\n    "comments": "Comment 1---Comment 2"\n  }\n]', language='json')
+                
+                current_promo_json = "[]"
+                if os.path.exists("promo_vault_drafts.json"):
+                    try:
+                        with open("promo_vault_drafts.json", "r") as f:
+                            current_promo_json = f.read()
+                    except: pass
+                
+                promo_json_input = st.text_area("Promo JSON", value=current_promo_json, height=200, key="promo_json_input")
+                if st.button("Save Promo JSON", use_container_width=True):
+                    try:
+                        import json
+                        parsed_json = json.loads(promo_json_input)
+                        if isinstance(parsed_json, list):
+                            with open("promo_vault_drafts.json", "w") as f:
+                                json.dump(parsed_json, f, indent=4)
+                            st.success(f"Saved {len(parsed_json)} promo texts to vault!")
+                        else:
+                            st.error("JSON must be a list of objects `[{...}, {...}]`.")
+                    except Exception as e:
+                        st.error(f"Invalid JSON format: {e}")
+                
+                st.divider()
+
+                if st.button("Load & Reshuffle Promo Vault", use_container_width=True):
+                    import os, json, random, time
+                    promo_texts = []
+                    if os.path.exists("promo_vault_drafts.json"):
+                        try:
+                            with open("promo_vault_drafts.json", "r") as f:
+                                promo_texts = json.load(f)
+                        except: pass
+                    
+                    promo_media = []
+                    if os.path.exists("promo_vault_media"):
+                        promo_media = [os.path.join("promo_vault_media", f) for f in os.listdir("promo_vault_media") if os.path.isfile(os.path.join("promo_vault_media", f))]
+                    
+                    if promo_texts and promo_media:
+                        random.shuffle(promo_texts)
+                        random.shuffle(promo_media)
+                        
+                        if "vault_media_assignments" not in st.session_state:
+                            st.session_state.vault_media_assignments = {}
+                        
+                        active_accts = list(communities_cache.keys())
+                        for idx, acct in enumerate(active_accts):
+                            t_data = promo_texts[idx % len(promo_texts)]
+                            m_file = promo_media[idx % len(promo_media)]
+                            
+                            st.session_state.drafted_messages[acct] = t_data.get("message", "")
+                            st.session_state[f"input_{acct}"] = t_data.get("message", "")
+                            st.session_state.drafted_comments[acct] = t_data.get("comments", "")
+                            st.session_state[f"comment_{acct}"] = t_data.get("comments", "")
+                            
+                            st.session_state.vault_media_assignments[acct] = LocalFileWrapper(m_file)
+                        
+                        st.success(f"Assigned promo content across {len(active_accts)} accounts!")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.warning("Promo vault is missing texts or media. Ensure promo_vault_drafts.json and promo_vault_media/ exist.")
 
             st.divider()
             with st.expander(":material/group_add: Master Community Bulk Assigner", expanded=True):
@@ -1848,6 +2099,38 @@ with tab1:
                 else:
                     st.success("All accounts have at least one community selected!")
 
+            with st.expander(":material/library_add: Master Content Bulk Assigner"):
+                st.write("Apply ONE media file, ONE post, and ONE comment across all accounts.")
+                master_msg = st.text_area("Master Message (Post text)", key="master_msg_input")
+                master_comment = st.text_area("Master Comments (Separate with '---')", key="master_cmt_input")
+                master_media = st.file_uploader("Master Media (Image/Video)", type=["jpg", "jpeg", "png", "mp4", "mov"], accept_multiple_files=False, key="master_media_input")
+                
+                col_mc1, col_mc2 = st.columns(2)
+                with col_mc1:
+                    if st.button("Apply Text & Comments to All", use_container_width=True):
+                        for p_id in communities_cache.keys():
+                            if master_msg:
+                                st.session_state.drafted_messages[p_id] = master_msg
+                                st.session_state[f"input_{p_id}"] = master_msg
+                            if master_comment:
+                                st.session_state.drafted_comments[p_id] = master_comment
+                                st.session_state[f"comment_{p_id}"] = master_comment
+                        st.success("Applied text/comments to all accounts!")
+                        import time
+                        time.sleep(1)
+                        st.rerun()
+                with col_mc2:
+                    if st.button("Apply Media to All", use_container_width=True):
+                        if master_media:
+                            st.session_state.master_media_assignment = master_media
+                            st.success("Applied media to all accounts!")
+                        else:
+                            st.session_state.master_media_assignment = None
+                            st.success("Cleared master media!")
+                        import time
+                        time.sleep(1)
+                        st.rerun()
+
             uploaded_images = {}
             for p_id, profile_comms in communities_cache.items():
                 st.markdown(f"### Account: {p_id}")
@@ -1886,19 +2169,29 @@ with tab1:
                 )
                 
                 uploaded_images[p_id] = st.file_uploader(
-                    f"Upload Image for {p_id} (Optional)", 
-                    type=["jpg", "jpeg", "png"], 
+                    f"Upload Media for {p_id} (Optional)", 
+                    type=["jpg", "jpeg", "png", "mp4", "mov"], 
                     key=f"img_{p_id}"
                 )
                 st.divider()
                 
+            if st.session_state.get("master_media_assignment"):
+                for p_id in communities_cache.keys():
+                    if not uploaded_images.get(p_id):
+                        uploaded_images[p_id] = st.session_state.master_media_assignment
+                        
+            if st.session_state.get("vault_media_assignments"):
+                for p_id, media_file in st.session_state.vault_media_assignments.items():
+                    if not uploaded_images.get(p_id):
+                        uploaded_images[p_id] = media_file
+                        
             def reshuffle_callback():
                 pass
 
             st.divider()
-            st.subheader("Bulk Image Upload (Optional)")
-            st.write("Upload multiple images here. Accounts that don't have a specific image assigned will randomly receive one of these images!")
-            bulk_images = st.file_uploader("Upload Bulk Images", type=["jpg", "jpeg", "png"], accept_multiple_files=True, key="bulk_images_uploader")
+            st.subheader("Bulk Media Upload (Optional)")
+            st.write("Upload multiple media files here. Accounts that don't have a specific media assigned will randomly receive one of these!")
+            bulk_images = st.file_uploader("Upload Bulk Media", type=["jpg", "jpeg", "png", "mp4", "mov"], accept_multiple_files=True, key="bulk_images_uploader")
             
             if "bulk_image_assignments" not in st.session_state:
                 st.session_state.bulk_image_assignments = {}
@@ -2055,12 +2348,28 @@ with tab1:
                                 
                                 if i in runs_with_images:
                                     comm_img = None
-                                    if 'bulk_images' in locals() and bulk_images:
+                                    comm_img_path = None
+                                    
+                                    vault_img_files = []
+                                    if os.path.exists("image_vault"):
+                                        vault_img_files = [f for f in os.listdir("image_vault") if os.path.isfile(os.path.join("image_vault", f))]
+                                        
+                                    if vault_img_files:
+                                        chosen_vault_img = random.choice(vault_img_files)
+                                        comm_img_path = os.path.join("image_vault", chosen_vault_img)
+                                    elif 'bulk_images' in locals() and bulk_images:
                                         comm_img = random.choice(bulk_images)
                                     else:
                                         comm_img = uploaded_images.get(p_id)
                                         
-                                    if comm_img:
+                                    if comm_img_path:
+                                        import shutil
+                                        safe_pid = "".join([c for c in p_id if c.isalnum()]).rstrip()
+                                        img_name = os.path.basename(comm_img_path)
+                                        dest_path = os.path.join("scheduled_uploads", f"{base_job_id}_{i}_{safe_pid}_{img_name}")
+                                        shutil.copy2(comm_img_path, dest_path)
+                                        uploaded_images_paths[p_id] = dest_path
+                                    elif comm_img:
                                         safe_pid = "".join([c for c in p_id if c.isalnum()]).rstrip()
                                         img_path = os.path.join("scheduled_uploads", f"{base_job_id}_{i}_{safe_pid}_{comm_img.name}")
                                         with open(img_path, "wb") as f: 
@@ -2495,3 +2804,33 @@ with tab3:
                         st.rerun()
             except:
                 pass
+with tab4:
+    st.header("Promo Media Manager")
+    st.write("View and delete promo videos currently stored in the promo vault.")
+    
+    promo_vault_dir = "promo_vault_media"
+    os.makedirs(promo_vault_dir, exist_ok=True)
+    existing_promos = os.listdir(promo_vault_dir)
+    
+    if not existing_promos:
+        st.info("No promo videos found in the vault.")
+    else:
+        for vid_name in existing_promos:
+            col1, col2 = st.columns([0.8, 0.2])
+            with col1:
+                try:
+                    st.video(os.path.join(promo_vault_dir, vid_name))
+                except Exception as e:
+                    st.error(f"Could not load video {vid_name}: {e}")
+                st.write(f"**{vid_name}**")
+            with col2:
+                if st.button("Delete", key=f"del_promo_tab4_{vid_name}"):
+                    try:
+                        os.remove(os.path.join(promo_vault_dir, vid_name))
+                        st.success(f"Deleted {vid_name}")
+                        import time
+                        time.sleep(1)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to delete {vid_name}: {e}")
+            st.divider()

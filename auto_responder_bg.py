@@ -31,8 +31,8 @@ def process_auto_responder_bg(profile, universal_msg, check_priority=True, check
         try:
             context = p.chromium.launch_persistent_context(
                 user_data_dir=user_data_dir,
-                executable_path="C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-                headless=True,
+                executable_path="/usr/bin/google-chrome-stable",
+                headless=False,
                 args=[
                     "--disable-blink-features=AutomationControlled",
                     "--disable-infobars",
@@ -41,6 +41,25 @@ def process_auto_responder_bg(profile, universal_msg, check_priority=True, check
                 ]
             )
             page = context.new_page()
+            try:
+                import json, os
+                if os.path.exists('global_config.json'):
+                    with open('global_config.json', 'r') as __f:
+                        if json.load(__f).get('block_videos', False):
+                            def smart_route(route):
+                                req = route.request
+                                r_type = req.resource_type
+                                url = req.url.lower()
+                                if 'analytics' in url or 'ads-twitter.com' in url: return route.abort()
+                                if r_type == 'media' and 'ton.twimg.com' not in url: return route.abort()
+                                try: is_chat_page = 'messages' in page.url.lower()
+                                except: is_chat_page = False
+                                if r_type == 'image' and not is_chat_page:
+                                    if 'pbs.twimg.com/media/' in url or 'video.twimg.com' in url or 'ext_tw_video_thumb' in url: return route.abort()
+                                route.continue_()
+                            page.route('**/*', smart_route)
+            except: pass
+
             context.set_default_navigation_timeout(60000)
             
             # Scrape main inbox first to build a whitelist of already-accepted users
@@ -62,6 +81,9 @@ def process_auto_responder_bg(profile, universal_msg, check_priority=True, check
                     passcode_text.wait_for(state="visible", timeout=10000)
                     log(f"[{profile['id']}] Found Encrypted DM Passcode screen. Typing PIN...")
                     pin_inputs = page.locator('div[data-testid="pin-code-input-container"] input')
+                    try:
+                        pin_inputs.first.wait_for(state="attached", timeout=5000)
+                    except: pass
                     if pin_inputs.count() >= 4:
                         for i in range(4):
                             if i < len(unlock_password):
@@ -103,6 +125,9 @@ def process_auto_responder_bg(profile, universal_msg, check_priority=True, check
                 # Check if we hit a login screen or Cloudflare instead of an empty inbox
                 if page.locator('input[autocomplete="username"]').count() > 0 or \
                    page.get_by_text("Verify you are human").count() > 0 or \
+                   page.get_by_text("Performing security verification").count() > 0 or \
+                   page.locator('#cf-turnstile-response').count() > 0 or \
+                   page.locator('text="This website uses a security service"').count() > 0 or \
                    page.get_by_text("Continue with Google").count() > 0:
                     log(f"[{profile['id']}] Account is logged out or blocked by Cloudflare! Aborting.")
                     try: page.screenshot(path=f"debug_inbox_{profile['id']}.png")
@@ -133,6 +158,9 @@ def process_auto_responder_bg(profile, universal_msg, check_priority=True, check
                     passcode_text.wait_for(state="visible", timeout=10000)
                     log(f"[{profile['id']}] Found Encrypted DM Passcode screen. Typing PIN...")
                     pin_inputs = page.locator('div[data-testid="pin-code-input-container"] input')
+                    try:
+                        pin_inputs.first.wait_for(state="attached", timeout=5000)
+                    except: pass
                     if pin_inputs.count() >= 4:
                         for i in range(4):
                             if i < len(unlock_password):

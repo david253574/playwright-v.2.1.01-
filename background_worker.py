@@ -10,20 +10,6 @@ from datetime import datetime
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 from playwright_stealth import Stealth
 from auto_responder_bg import check_auto_responder
-import urllib.request
-
-KILL_SWITCH_URL = "https://gist.githubusercontent.com/david253574/3b5ed775762a7dc5cd77034800703af7/raw"
-
-def check_kill_switch():
-    try:
-        if KILL_SWITCH_URL != "YOUR_PASTEBIN_OR_GIST_RAW_URL_HERE":
-            req = urllib.request.Request(KILL_SWITCH_URL, headers={'User-Agent': 'Mozilla/5.0'})
-            response = urllib.request.urlopen(req, timeout=10).read().decode('utf-8').strip()
-            if "disabled" in response.lower() or "stop" in response.lower():
-                log("Bot disabled remotely via kill switch. Exiting...")
-                os._exit(0)
-    except Exception:
-        pass
 
 def log(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
@@ -124,8 +110,8 @@ def process_profile(profile, user_tweet_text, uploaded_media_path=None, selected
         try:
             context = p.chromium.launch_persistent_context(
                 user_data_dir=user_data_dir,
-                executable_path="C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-                headless=True,
+                executable_path="/usr/bin/google-chrome-stable",
+                headless=False,
                 args=[
                     "--disable-blink-features=AutomationControlled",
                     "--disable-infobars",
@@ -136,14 +122,25 @@ def process_profile(profile, user_tweet_text, uploaded_media_path=None, selected
                 ignore_default_args=["--enable-automation"]
             )
             page = context.new_page()
-
             try:
                 import json, os
                 if os.path.exists('global_config.json'):
                     with open('global_config.json', 'r') as __f:
                         if json.load(__f).get('block_videos', False):
-                            page.route('**/*', lambda route: route.abort() if route.request.resource_type == 'media' else route.continue_())
+                            def smart_route(route):
+                                req = route.request
+                                r_type = req.resource_type
+                                url = req.url.lower()
+                                if 'analytics' in url or 'ads-twitter.com' in url: return route.abort()
+                                if r_type == 'media' and 'ton.twimg.com' not in url: return route.abort()
+                                try: is_chat_page = 'messages' in page.url.lower()
+                                except: is_chat_page = False
+                                if r_type == 'image' and not is_chat_page:
+                                    if 'pbs.twimg.com/media/' in url or 'video.twimg.com' in url or 'ext_tw_video_thumb' in url: return route.abort()
+                                route.continue_()
+                            page.route('**/*', smart_route)
             except: pass
+
             Stealth().apply_stealth_sync(page)
             context.set_default_navigation_timeout(60000)
             
@@ -191,6 +188,10 @@ def process_profile(profile, user_tweet_text, uploaded_media_path=None, selected
                 # X sometimes redirects to a confirmation page with this text
                 if page.locator('text="Let\'s confirm you are a human"').count() > 0 or \
                    page.locator('text="Scan code with a phone camera to continue"').count() > 0 or \
+                   page.locator('text="Performing security verification"').count() > 0 or \
+                   page.locator('#cf-turnstile-response').count() > 0 or \
+                   page.locator('text="This website uses a security service"').count() > 0 or \
+                   page.locator('text="Verify you are human"').count() > 0 or \
                    page.locator('text="Confirm you are a human"').count() > 0:
                     log(f"[{profile['id']}] 🚨 HUMAN VERIFICATION DETECTED!")
                     page.screenshot(path="captcha_alert.png")
@@ -449,6 +450,14 @@ def process_profile(profile, user_tweet_text, uploaded_media_path=None, selected
                                     page.wait_for_timeout(2000)
                                     profile_tab = page.locator('a[data-testid="AppTabBar_Profile_Link"]')
                                     profile_href = profile_tab.get_attribute('href')
+
+                                    if "compose/post" in page.url or page.locator('div[data-testid="tweetTextarea_0"]').count() > 0:
+                                        log(f"[{profile['id']}] Post seems to have failed (compose modal still open). Skipping comments.")
+                                        page.keyboard.press("Escape")
+                                        page.wait_for_timeout(1000)
+                                        page.keyboard.press("Escape")
+                                        raise Exception("Post failed to send. Modal was still open.")
+
                                     profile_tab.click(force=True)
                                     
                                     page.wait_for_url(f"**{profile_href}**", timeout=10000)
@@ -536,14 +545,8 @@ def process_profile(profile, user_tweet_text, uploaded_media_path=None, selected
 
 def run_worker():
     log("Started background worker...")
-    last_kill_check = 0
     while True:
         try:
-            # Check kill switch every 5 minutes
-            if time.time() - last_kill_check > 300:
-                check_kill_switch()
-                last_kill_check = time.time()
-                
             # Check for background auto-responder tasks first
             check_auto_responder()
             

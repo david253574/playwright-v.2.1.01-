@@ -8,7 +8,7 @@ print("Launching visible browser for inspection...")
 with sync_playwright() as p:
     context = p.chromium.launch_persistent_context(
         user_data_dir=user_data_dir,
-        executable_path="C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+        executable_path="/usr/bin/google-chrome-stable",
         headless=False,
         args=["--disable-blink-features=AutomationControlled", "--disable-infobars"]
     )
