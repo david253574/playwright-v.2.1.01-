@@ -31,33 +31,48 @@ def human_pause(min_seconds: float = 2.0, max_seconds: float = 4.0):
 
 def is_session_locked(user_data_dir):
     """Checks if the browser profile is currently locked by another process."""
+    if not user_data_dir or not os.path.exists(user_data_dir):
+        return False
     lock_file = os.path.join(user_data_dir, "SingletonLock")
-    if os.path.lexists(lock_file):
+    if not os.path.exists(lock_file):
+        return False
+    if sys.platform == "win32":
         try:
-            target = os.readlink(lock_file)
-            parts = target.rsplit('-', 1)
-            if len(parts) == 2:
-                pid = int(parts[1])
+            os.remove(lock_file)
+            cookie_file = os.path.join(user_data_dir, "SingletonCookie")
+            if os.path.exists(cookie_file):
+                try: os.remove(cookie_file)
+                except Exception: pass
+            return False
+        except (PermissionError, OSError):
+            st.warning("The browser profile is currently in use. Please close all browser windows to continue.")
+            return True
+    else:
+        if os.path.lexists(lock_file):
+            try:
+                target = os.readlink(lock_file)
+                parts = target.rsplit('-', 1)
+                if len(parts) == 2:
+                    pid = int(parts[1])
+                    try:
+                        os.kill(pid, 0)
+                        st.warning("The browser profile is currently in use. Please close all browser windows to continue.")
+                        return True # Process is still alive and locked
+                    except OSError:
+                        pass # Process is dead, safe to remove lock
+                # If we reach here, process is dead or we couldn't parse PID
                 try:
-                    os.kill(pid, 0)
-                    st.warning("The browser profile is currently in use. Please close all browser windows to continue.")
-                    return True # Process is still alive and locked
-                except OSError:
-                    pass # Process is dead, safe to remove lock                    pass
-            # If we reach here, process is dead or we couldn't parse PID
-            try:
-                os.remove(lock_file)
-                cookie_file = os.path.join(user_data_dir, "SingletonCookie")
-                if os.path.lexists(cookie_file):
-                    os.remove(cookie_file)
-            except: pass
-            return False
-        except Exception as e:
-            st.warning(f"Warning: Could not parse lock file, forcing removal: {e}")
-            try:
-                os.remove(lock_file)
-            except: pass
-            return False
+                    os.remove(lock_file)
+                    cookie_file = os.path.join(user_data_dir, "SingletonCookie")
+                    if os.path.lexists(cookie_file):
+                        os.remove(cookie_file)
+                except: pass
+                return False
+            except Exception as e:
+                try:
+                    os.remove(lock_file)
+                except: pass
+                return False
     return False
 
 def setup_persistent_session(user_data_path, target_login_url="https://x.com"):
@@ -70,7 +85,8 @@ def setup_persistent_session(user_data_path, target_login_url="https://x.com"):
         try:
             import os
             browser_env = os.environ.copy()
-            browser_env["DISPLAY"] = ":0"  # Force Chrome to the real, visible physical monitor
+            if sys.platform != "win32":
+                browser_env["DISPLAY"] = ":0"  # Force Chrome to the real, visible physical monitor
             
             context = p.chromium.launch_persistent_context(
                 user_data_dir=user_data_path,
@@ -1595,7 +1611,7 @@ with st.sidebar:
     if not os.path.exists("captcha_alert.png") and not os.path.exists("bot_status.json") and not os.path.exists("login_needed.json"):
         st.success("No active security verifications or alerts. Everything is running smoothly.")
 
-tab1, tab2, tab3, tab4 = st.tabs(["Publish Dashboard", "Manage Accounts", "Auto-Responder", "Promo Videos"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["Publish Dashboard", "Manage Accounts", "Auto-Responder", "Promo Videos", "Account Onboarding & Provisioning"])
 
 def load_profiles():
     try:
@@ -2834,3 +2850,1030 @@ with tab4:
                     except Exception as e:
                         st.error(f"Failed to delete {vid_name}: {e}")
             st.divider()
+
+with tab5:
+    import sys
+    import account_creator
+    import account_login
+    import account_creator_email
+    import email_alias_manager
+    from herosms_client import HeroSMSClient
+    import female_profile_vault
+    import batch_account_creator
+
+    def render_batch_creator_ui(default_method="email_alias", key_prefix="batch_"):
+        runner = batch_account_creator.BatchAccountRunner.get_instance()
+        b_status = runner.get_status()
+        is_running = b_status.get("is_running", False)
+        
+        col_bc1, col_bc2 = st.columns([0.55, 0.45])
+        
+        with col_bc1:
+            st.subheader(":material/tune: Batch Execution Parameters")
+            b_count = st.number_input(
+                "Total Accounts to Create",
+                min_value=1,
+                max_value=None,
+                value=int(b_status.get("target_count") or 10) if is_running else 10,
+                step=1,
+                help="Set as many accounts to create as desired. No limit.",
+                disabled=is_running,
+                key=f"{key_prefix}acc_count_input"
+            )
+            
+            b_method_choice = st.radio(
+                "Provisioning Engine",
+                options=["Email Alias (Gmail Dot Trick / Plus)", "HeroSMS (Automated Phone Rental)"],
+                index=0 if default_method == "email_alias" else 1,
+                horizontal=True,
+                disabled=is_running,
+                key=f"{key_prefix}method_radio"
+            )
+            method_key = "email_alias" if "Email" in b_method_choice else "herosms"
+
+            c_int1, c_int2 = st.columns(2)
+            b_interval = c_int1.slider(
+                "Base Interval (Minutes)",
+                min_value=30,
+                max_value=120,
+                value=60,
+                step=5,
+                help="Base cooldown time between each account creation.",
+                disabled=is_running,
+                key=f"{key_prefix}base_interval_slider"
+            )
+            b_jitter = c_int2.slider(
+                "Random Human Jitter (± Minutes)",
+                min_value=0,
+                max_value=20,
+                value=10,
+                step=1,
+                help="Adds random variance so intervals are not exact robotic intervals. E.g. 60m ± 10m = 50 to 70 mins.",
+                disabled=is_running,
+                key=f"{key_prefix}jitter_slider"
+            )
+            b_retries = c_int1.number_input(
+                "Max Retries per Account on Transient Failure",
+                min_value=1,
+                max_value=5,
+                value=3,
+                step=1,
+                help="If registration encounters a network timeout or missing dialog, automatically retries up to this many times (with 15s backoff) before entering cooldown.",
+                disabled=is_running,
+                key=f"{key_prefix}retries_input"
+            )
+            st.caption(f"**Actual Pacing:** Each creation will be spaced by **{max(5, b_interval - b_jitter)} to {b_interval + b_jitter} minutes** with **up to {b_retries} automatic retries** per account on transient failure.")
+
+        with col_bc2:
+            if method_key == "email_alias":
+                st.subheader(":material/alternate_email: Alias Blueprint Settings")
+                b_base_email = st.text_input(
+                    "Primary Base Gmail Address",
+                    value=st.session_state.get("email_base_address", "davidosili93@gmail.com"),
+                    help="Incoming verification emails will land in this inbox.",
+                    disabled=is_running,
+                    key=f"{key_prefix}base_email_input"
+                )
+                st.session_state.email_base_address = b_base_email
+
+                b_strat = st.radio(
+                    "Email Alias Strategy",
+                    options=["Gmail Dot Trick (d.avido...)", "Gmail Plus Addressing (+tag)"],
+                    index=0,
+                    horizontal=True,
+                    disabled=is_running,
+                    key=f"{key_prefix}strat_radio"
+                )
+                strat_val = "dot" if "Dot" in b_strat else "plus"
+
+                b_gmail_app_pwd = st.text_input(
+                    "Gmail App Password (Optional - for Auto-OTP Extraction)",
+                    value="",
+                    type="password",
+                    placeholder="16-character App Password (leave blank for interactive code entry)",
+                    help="If provided, the bot autonomously connects via IMAP SSL to fetch the 6-digit verification code from Gmail without you typing it.",
+                    disabled=is_running,
+                    key=f"{key_prefix}app_pwd_input"
+                )
+            else:
+                b_base_email = "davidosili93@gmail.com"
+                strat_val = "dot"
+                b_gmail_app_pwd = ""
+                st.subheader(":material/settings_suggest: HeroSMS Settings")
+                st.info("Service Target: Twitter / X (US virtual line). Enforces 20s minimum wait and automatic SMS polling.")
+
+            st.subheader(":material/tune: Profile Customization & Stealth Stack")
+            b_engine_choice = st.selectbox(
+                "Browser Engine",
+                ["Google Chrome (Default)", "Microsoft Edge", "Brave Browser", "Auto-Rotate across available browsers"],
+                index=0,
+                disabled=is_running,
+                key=f"{key_prefix}browser_engine_sb"
+            )
+            b_engine_map = {
+                "Google Chrome (Default)": "chrome",
+                "Microsoft Edge": "msedge",
+                "Brave Browser": "brave",
+                "Auto-Rotate across available browsers": "rotate"
+            }
+            selected_b_engine = b_engine_map.get(b_engine_choice, "chrome")
+            b_vault = st.checkbox("Auto-pick Name & Bio from Female Vault", value=True, disabled=is_running, key=f"{key_prefix}vault_cb")
+            b_attach_web = st.checkbox("Attach Promo Website Link", value=True, disabled=is_running, key=f"{key_prefix}attach_web_cb")
+            b_web_url = st.text_input("Website URL", value="https://getmysocial.com/uwuscrettt", disabled=is_running or not b_attach_web, key=f"{key_prefix}web_url_input")
+            b_rotate_vpn = st.checkbox("Rotate VPN Location via Windscribe CLI between accounts (Optional)", value=False, disabled=is_running, key=f"{key_prefix}rotate_vpn_cb")
+            
+            disp_info = "Windows Native Desktop" if sys.platform == "win32" else "display :0 (Hardware GPU)"
+            st.info(f"**Display Pipeline**: Executes {b_engine_choice} via Patchright on {disp_info} with stealth args.")
+
+        st.divider()
+
+        # Action Buttons
+        col_btn_start, col_btn_stop = st.columns([0.65, 0.35])
+        
+        if not is_running:
+            disp_method_tag = "Email Alias" if "Email" in b_method_choice else "HeroSMS"
+            if col_btn_start.button(f":material/rocket_launch: Start Hourly Batch Creation ({b_count} Accounts via {disp_method_tag})", type="primary", use_container_width=True, key=f"{key_prefix}btn_start"):
+                ok, msg = runner.start_batch(
+                    count=b_count,
+                    base_interval_mins=b_interval,
+                    jitter_mins=b_jitter,
+                    method=method_key,
+                    base_email=b_base_email,
+                    strategy=strat_val,
+                    use_female_vault=b_vault,
+                    website_url=b_web_url if b_attach_web else "",
+                    gmail_app_password=b_gmail_app_pwd,
+                    rotate_vpn=b_rotate_vpn,
+                    max_retries=b_retries,
+                    browser_engine=selected_b_engine
+                )
+                if ok:
+                    st.success(msg)
+                    st.rerun()
+                else:
+                    st.error(msg)
+        else:
+            if col_btn_stop.button(":material/stop_circle: Stop / Cancel Batch Runner", type="secondary", use_container_width=True, key=f"{key_prefix}btn_stop"):
+                runner.stop()
+                st.warning("Cancellation requested. Stopping...")
+                time.sleep(1)
+                st.rerun()
+
+        # Live Monitor Card
+        st.subheader(":material/monitoring: Batch Execution Monitor")
+        current_phase = b_status.get("current_phase", "idle")
+        phase_color = {
+            "idle": "IDLE",
+            "starting": "STARTING",
+            "creating": "CREATING ACCOUNT",
+            "awaiting_code": "AWAITING VERIFICATION CODE",
+            "cooldown": "RESTING / COOLDOWN",
+            "completed": "COMPLETED",
+            "stopped": "STOPPED",
+            "error": "ERROR"
+        }.get(current_phase, current_phase.upper())
+        
+        m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+        m_col1.metric("Current State", phase_color)
+        m_col2.metric("Target Total", f"{b_status.get('target_count', 0)} accounts")
+        m_col3.metric("Successfully Created", f"{b_status.get('completed_count', 0)}")
+        m_col4.metric("Failed", f"{b_status.get('failed_count', 0)}")
+        
+        tot = b_status.get("target_count", 1) or 1
+        comp = b_status.get("completed_count", 0)
+        prog_ratio = min(1.0, max(0.0, comp / tot))
+        st.progress(prog_ratio, text=f"Overall Progress: {comp} / {tot} accounts provisioned ({int(prog_ratio * 100)}%)")
+        
+        st.info(f"**Status Message:** {b_status.get('status_message', '')}")
+        
+        curr_screen = b_status.get("current_screenshot")
+        if curr_screen and os.path.exists(curr_screen):
+            with st.expander(":material/screenshot: Current Browser Step Screen Capture", expanded=(current_phase == "awaiting_code")):
+                st.image(curr_screen, caption=f"Live capture: {curr_screen}", use_container_width=True)
+        
+        # INTERACTIVE CODE ENTRY CARD WHEN AWAITING CODE
+        if current_phase == "awaiting_code":
+            c_type = b_status.get("code_type", "email")
+            code_recipient = b_status.get("code_recipient") or b_status.get("current_alias") or "your email"
+            if c_type == "sms":
+                st.warning(":material/sms: **SMS Verification Code Dispatched!**")
+                st.markdown(f"Twitter / X dispatched an SMS confirmation code to rented phone: **`+1 {code_recipient}`** (HeroSMS).")
+                st.caption(":material/smart_toy: **Autonomous Monitoring Active:** Bot is polling HeroSMS every 2 seconds. As soon as HeroSMS receives the code, it will submit it automatically.")
+            else:
+                st.warning(":material/mark_email_unread: **Interactive Verification Code Required!**")
+                st.markdown(f"Twitter / X has dispatched a 6-digit confirmation code to: **`{code_recipient}`** (arriving in primary inbox **`{b_status.get('base_email', 'davidosili93@gmail.com')}`**).")
+            st.markdown("**Enter the code below (or wait for automatic capture) to finalize this account:**")
+            
+            c_code1, c_code2, c_code3 = st.columns([0.5, 0.3, 0.2])
+            interactive_code_input = c_code1.text_input("6-Digit Code", placeholder="e.g. 849201", max_chars=10, key=f"{key_prefix}interactive_code_input")
+            if c_code2.button(":material/send: Submit Code", type="primary", use_container_width=True, key=f"{key_prefix}btn_submit_code"):
+                if interactive_code_input.strip():
+                    ok, msg = runner.submit_verification_code(interactive_code_input.strip())
+                    if ok:
+                        st.success(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+                else:
+                    st.error("Please enter the verification code first.")
+            if c_code3.button(":material/cancel: Cancel Batch", use_container_width=True, key=f"{key_prefix}btn_cancel_code"):
+                runner.stop()
+                st.rerun()
+
+        # COOLDOWN COUNTDOWN CARD (Client-Side JS - Uses Chrome's Internal Clock)
+        if current_phase == "cooldown":
+            import streamlit.components.v1 as components
+            target_ts = b_status.get("next_run_timestamp")
+            if not target_ts:
+                target_ts = time.time() + b_status.get("cooldown_seconds_remaining", 0)
+            target_ms = int(target_ts * 1000)
+            
+            countdown_html = f"""
+            <div style="
+                background: rgba(255, 170, 0, 0.12);
+                border: 1px solid rgba(255, 170, 0, 0.4);
+                border-radius: 8px;
+                padding: 12px 18px;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                display: flex;
+                align-items: center;
+                gap: 14px;
+                margin-bottom: 6px;
+            ">
+                <div>
+                    <div style="font-size: 14.5px; font-weight: 700; color: #ffbe33;">Natural 1-Hour Cooldown Active</div>
+                    <div style="font-size: 13px; color: #e2e8f0; margin-top: 3px;">
+                        Next account creation scheduled in: <span id="cooldown-timer" style="font-weight: 700; color: #38bdf8; font-family: monospace; font-size: 15px;">Calculating...</span>
+                    </div>
+                </div>
+            </div>
+            <script>
+                const targetMs = {target_ms};
+                function updateTimer() {{
+                    const now = Date.now();
+                    const diffSec = Math.max(0, Math.floor((targetMs - now) / 1000));
+                    const mins = Math.floor(diffSec / 60);
+                    const secs = diffSec % 60;
+                    const el = document.getElementById('cooldown-timer');
+                    if (el) {{
+                        el.innerText = `${{mins}}m ${{secs < 10 ? '0' : ''}}${{secs}}s`;
+                    }}
+                    if (diffSec <= 0) {{
+                        setTimeout(() => {{
+                            try {{ window.parent.location.reload(); }} catch(e) {{}}
+                        }}, 1500);
+                    }}
+                }}
+                updateTimer();
+                setInterval(updateTimer, 1000);
+            </script>
+            """
+            components.html(countdown_html, height=80)
+
+        # Results table of accounts created in this run
+        created_list = b_status.get("created_accounts", [])
+        if created_list:
+            st.markdown("**Provisioned Accounts in this Batch:**")
+            st.dataframe(created_list, use_container_width=True)
+            
+        # Live log terminal
+        b_logs = b_status.get("logs", [])
+        with st.expander(":material/terminal: Live Batch Execution Terminal Logs", expanded=is_running):
+            st.text_area("Live Terminal", value="\n".join(b_logs), height=250, key=f"{key_prefix}log_area", disabled=True)
+            if is_running and current_phase not in ["cooldown"]:
+                time.sleep(4)
+                st.rerun()
+
+    st.header(":material/person_add: Account Onboarding & Provisioning")
+    st.write("Provision new accounts via automated SMS rental, email aliases with interactive verification, or directly authenticate existing accounts using credentials and 2FA Authenticator codes.")
+    
+    tab_cred, tab_auto, tab_email, tab_batch = st.tabs([
+        ":material/key: Direct Credential Login (Username / 2FA TOTP)",
+        ":material/smart_toy: Auto-Create via HeroSMS",
+        ":material/alternate_email: Create via Email Alias",
+        ":material/timer: Paced Batch Creator (Hourly Automation)"
+    ])
+    
+    with tab_cred:
+        login_mode = st.radio(
+            "Authentication Pipeline Mode",
+            options=[":material/person: Single Account Login", ":material/group_add: Batch / Multi-Account Provisioning"],
+            horizontal=True,
+            key="cred_login_mode"
+        )
+        
+        if login_mode == ":material/person: Single Account Login":
+            st.subheader(":material/key: Direct Account Authentication")
+            st.write("Directly log in to an existing X account using its username, password, and 2FA secret (authenticator key). The bot automatically calculates the rotating 6-digit TOTP pin, completes the login flow with stealth native Chrome, updates the profile name and bio if configured, extracts session cookies (`auth_token` and `ct0`), and registers the account in `profiles.json`.")
+            
+            st.markdown("**Quick-Paste Credentials (Auto-detects Username, Password, 2FA, Name, Bio):**")
+            raw_paste = st.text_area(
+                "Paste credentials block",
+                placeholder="Username: cxen2rjc\nPassword: Bgkhy2ei\n2FA: V4A4IEOBEEECEH6P\nName: Fi Kendall\nBio: Welcome to my world! Link in bio 💋",
+                height=110,
+                key="cred_login_paste",
+                label_visibility="collapsed"
+            )
+            
+            parsed_p = account_login.parse_credentials_text(raw_paste) if raw_paste else {}
+            
+            col_c1, col_c2 = st.columns([0.6, 0.4])
+            with col_c1:
+                st.subheader(":material/badge: Account Credentials")
+                c_acc_id, c_acc_user = st.columns(2)
+                login_acc_id = c_acc_id.text_input("Profile ID", value=account_login.get_next_account_id(), key="login_acc_id", help="Identifier in profiles.json")
+                login_username = c_acc_user.text_input("Username / Handle", value=parsed_p.get("username", ""), key="login_username", placeholder="e.g. cxen2rjc")
+                
+                # Detect if handle already exists in profiles.json
+                existing_single_acc = None
+                if login_username and os.path.exists("profiles.json"):
+                    try:
+                        with open("profiles.json", "r") as pf:
+                            for p in json.load(pf):
+                                if p.get("username", "").strip().lower() == login_username.strip().lower():
+                                    existing_single_acc = p
+                                    break
+                    except Exception:
+                        pass
+                if existing_single_acc:
+                    st.info(f":material/info: **@{login_username}** is already active as **[{existing_single_acc.get('id')}]**. Logging in will re-authenticate this account and update its session.")
+                
+                c_acc_pwd, c_acc_2fa = st.columns(2)
+                login_password = c_acc_pwd.text_input("Password", value=parsed_p.get("password", ""), type="password", key="login_password")
+                login_2fa = c_acc_2fa.text_input("2FA Secret Key", value=parsed_p.get("two_factor", ""), key="login_2fa", placeholder="e.g. V4A4IEOBEEECEH6P", help="Base32 TOTP secret from authenticator app")
+                
+            with col_c2:
+                st.subheader(":material/shield: 2FA TOTP Live Status")
+                if login_2fa.strip():
+                    try:
+                        pin_code, rem_sec = account_login.generate_totp_pin(login_2fa.strip())
+                        st.success(f"Live 6-Digit PIN: **{pin_code}**")
+                        st.caption(f"Valid for {rem_sec}s remaining before next 30s rotation cycle. Matches standard RFC 6238 and browserscan.net/2fa.")
+                    except Exception as e:
+                        st.error(f"Invalid 2FA secret: {e}")
+                else:
+                    st.info("Paste or enter a 2FA Secret key to preview the live 6-digit TOTP pin.")
+                disp_info = "Windows Native Desktop" if sys.platform == "win32" else "display :0"
+                st.info(f"Display Pipeline: Executes Native Google Chrome via Patchright on {disp_info}.")
+                st.info("Community Seeding: Automatically pre-populates default booster communities upon login.")
+                
+            st.write("---")
+            st.subheader(":material/edit_note: Profile Presentation Customization on X")
+            single_cust_enable = st.checkbox("Customize Profile on Login (Edit Display Name, Bio & Website on X)", value=True, key="single_cust_enable")
+            single_disp_name = None
+            single_bio = None
+            single_website = None
+            
+            if single_cust_enable:
+                sc_col1, sc_col2 = st.columns([0.45, 0.55])
+                
+                # Check for random vault pick in session_state
+                default_single_name = st.session_state.get("single_vault_name", parsed_p.get("display_name", ""))
+                default_single_bio = st.session_state.get("single_vault_bio", parsed_p.get("bio", ""))
+                
+                single_disp_name = sc_col1.text_input("Target Display Name on X", value=default_single_name, placeholder="e.g. Chloe", key="single_disp_name_input")
+                single_website = sc_col1.text_input("Target Website Link on X", value="https://getmysocial.com/uwuscrettt", key="single_web_input")
+                
+                if sc_col1.button(":material/shuffle: Pick Random from Female Vault", key="btn_pick_single_vault"):
+                    st.session_state["single_vault_name"] = female_profile_vault.get_random_female_name()
+                    st.session_state["single_vault_bio"] = female_profile_vault.get_random_female_bio()
+                    st.rerun()
+                    
+                single_bio = sc_col2.text_area("Target Profile Bio on X", value=default_single_bio, placeholder="e.g. 18 ☆ college is ruining me", height=128, key="single_bio_input")
+                
+            start_cred_login = st.button(":material/login: Authenticate & Save Account", type="primary", use_container_width=True, key="btn_start_cred_login")
+            
+            if start_cred_login:
+                if not login_username or not login_password:
+                    st.error("Username and password are required to log in.")
+                else:
+                    st.subheader(":material/terminal: Login Execution Stream")
+                    login_status_box = st.status(f"Starting login flow for [{login_acc_id}] (@{login_username})...", expanded=True)
+                    login_log_placeholder = st.empty()
+                    login_messages = []
+                    
+                    def cred_ui_logger(msg):
+                        ts = time.strftime("%H:%M:%S")
+                        fmsg = f"[{ts}] {msg}"
+                        login_messages.append(fmsg)
+                        login_status_box.write(fmsg)
+                        login_log_placeholder.text_area("Live Login Output", value="\n".join(login_messages), height=260)
+                        
+                    try:
+                        with st.spinner("Logging in and authenticating 2FA..."):
+                            import importlib
+                            importlib.reload(account_login)
+                            logged_profile = account_login.login_twitter_with_credentials(
+                                account_id=login_acc_id,
+                                username=login_username,
+                                password=login_password,
+                                two_factor_secret=login_2fa,
+                                display_name=single_disp_name if single_cust_enable else None,
+                                bio=single_bio if single_cust_enable else None,
+                                website=single_website if single_cust_enable else None,
+                                log_fn=cred_ui_logger
+                            )
+                        login_status_box.update(label=f"Account [{login_acc_id}] successfully authenticated and saved!", state="complete", expanded=False)
+                        st.success(f"SUCCESS: Account [{login_acc_id}] (@{logged_profile['username']}) successfully saved and ready!")
+                        
+                        r1, r2, r3, r4 = st.columns(4)
+                        r1.metric("Profile ID", logged_profile.get("id"))
+                        r2.metric("Handle", f"@{logged_profile.get('username')}")
+                        r3.metric("Display Name", logged_profile.get("display_name") or "(Original)")
+                        r4.metric("Session Token", "Captured" if logged_profile.get("auth_token") else "Pending")
+                        
+                        st.info("Account authenticated! Switch to the 'Manage Accounts' tab above to view your configured profile.")
+                    except Exception as exc:
+                        login_status_box.update(label=f"Login halted: {exc}", state="error", expanded=True)
+                        st.error(f"Error during login: {exc}")
+                        if os.path.exists(f"rate_limit_{login_acc_id}.png"):
+                            st.warning("Twitter Rate Limit Screenshot:")
+                            st.image(f"rate_limit_{login_acc_id}.png", caption="Twitter Rate Limit Capture", use_container_width=True)
+                        elif os.path.exists(f"login_fail_{login_acc_id}.png"):
+                            st.image(f"login_fail_{login_acc_id}.png", caption="Failure Screenshot", use_container_width=True)
+
+        else:
+            # Batch / Multi-Account Provisioning Mode
+            st.subheader(":material/group_add: Multi-Account Batch Onboarding & Setup")
+            disp_info = "Windows Native Desktop" if sys.platform == "win32" else "display :0"
+            st.write(f"Batch authenticate multiple X accounts with parallel bot workers. The bot pool executes stealth logins on {disp_info} using native Google Chrome, computes 2FA TOTP codes, randomizes female names and aesthetic bios, attaches your website link, captures session tokens, and registers each profile in `profiles.json`.")
+            
+            st.markdown("**Paste Multiple Accounts (Supports `user:pass:2fa`, `user:pass:2fa:name:bio`, `user|pass|2fa`, or multi-line blocks):**")
+            batch_raw_text = st.text_area(
+                "Batch Accounts Raw Block",
+                placeholder="user1:pass1:2FAKEY1:Alice Wonder:VIP Link in bio\nuser2:pass2:2FAKEY2:Bella Starr:Official Account\n\n# Or Key-Value blocks:\nUsername: user3\nPassword: pass3\n2FA: 2FAKEY3\nName: Clara\nBio: Daily content updates",
+                height=180,
+                key="batch_accounts_raw"
+            )
+            
+            import importlib
+            importlib.reload(account_login)
+            parsed_batch = account_login.parse_bulk_accounts_text(batch_raw_text) if batch_raw_text else []
+            
+            # Read active profiles for duplicate detection
+            existing_active_map = {}
+            if os.path.exists("profiles.json"):
+                try:
+                    with open("profiles.json", "r") as pf:
+                        for p in json.load(pf):
+                            u = p.get("username", "").strip().lower()
+                            if u:
+                                existing_active_map[u] = p.get("id", "Active")
+                except Exception:
+                    pass
+            
+            new_accounts_count = 0
+            existing_accounts_count = 0
+            if parsed_batch:
+                for acc in parsed_batch:
+                    u = acc.get("username", "").strip().lower()
+                    if u in existing_active_map:
+                        existing_accounts_count += 1
+                    else:
+                        new_accounts_count += 1
+
+                if existing_accounts_count > 0:
+                    st.info(f":material/info: **{len(parsed_batch)} account(s) detected:** **{new_accounts_count} new** and **{existing_accounts_count} already registered** in `profiles.json`.")
+                else:
+                    st.success(f":material/check_circle: **{len(parsed_batch)} account(s) detected** ready for automated batch onboarding.")
+                    
+                with st.expander(f"Preview {len(parsed_batch)} Detected Accounts ({new_accounts_count} New, {existing_accounts_count} Already Active)", expanded=True):
+                    preview_rows = []
+                    for i, acc in enumerate(parsed_batch, 1):
+                        u = acc.get("username", "").strip().lower()
+                        is_active = u in existing_active_map
+                        status_str = f"🟢 Active ({existing_active_map[u]})" if is_active else "🆕 New Profile"
+                        preview_rows.append({
+                            "#": i,
+                            "Status": status_str,
+                            "Username": f"@{acc.get('username')}",
+                            "Password": "•" * len(acc.get("password", "")),
+                            "2FA Key": f"{acc.get('two_factor')[:4]}...{acc.get('two_factor')[-4:]}" if len(acc.get("two_factor", "")) > 8 else acc.get("two_factor", ""),
+                            "Display Name": acc.get("display_name") or "(Female Vault / Random)",
+                            "Bio": (acc.get("bio")[:40] + "...") if len(acc.get("bio", "")) > 40 else (acc.get("bio") or "(Aesthetic Vault / Random)")
+                        })
+                    st.dataframe(preview_rows, use_container_width=True)
+            else:
+                st.info("Paste accounts into the text box above to preview the detected credentials and profile settings.")
+                
+            st.write("---")
+            st.subheader(":material/tune: Multi-Bot Concurrency & Profile Customization")
+            col_b1, col_b2 = st.columns([0.55, 0.45])
+            
+            with col_b1:
+                batch_update_profile = st.checkbox("Auto-update Profile on login (Female Name, Bio & Website)", value=True, key="batch_update_profile")
+                if batch_update_profile:
+                    use_female_vault = st.checkbox(
+                        "Enable Female Profile Vault (Randomizes from 35 female names & aesthetic bios)",
+                        value=True,
+                        key="batch_use_female_vault"
+                    )
+                    batch_website = st.text_input(
+                        "Target Website Link on X",
+                        value="https://getmysocial.com/uwuscrettt",
+                        key="batch_website_input",
+                        help="Link to populate in the X profile website field"
+                    )
+                    
+                    names_pool = female_profile_vault.load_female_names()
+                    bios_pool = female_profile_vault.load_female_bios()
+                    with st.expander(f":material/auto_awesome: View Female Names ({len(names_pool)}) & Aesthetic Bios ({len(bios_pool)}) Vault", expanded=False):
+                        st.markdown("**Female Names Pool (Sample):**")
+                        st.caption(", ".join(names_pool[:20]) + f", and {len(names_pool)-20} more...")
+                        st.markdown("**Aesthetic Bios Pool (Sample):**")
+                        for b in bios_pool[:4]:
+                            st.caption(f"- `{b}`")
+                            
+                    batch_default_name = st.text_input(
+                        "Fixed Manual Display Name (Optional)",
+                        placeholder="Leave blank to use Female Names Vault randomizer",
+                        help="Only fills if an account does not specify a name and you want a fixed name instead of random",
+                        key="batch_default_name"
+                    )
+                    batch_default_bio = st.text_area(
+                        "Fixed Manual Bio (Optional)",
+                        placeholder="Leave blank to use Aesthetic Bios Vault randomizer",
+                        help="Only fills if an account does not specify a bio and you want a fixed bio instead of random",
+                        height=68,
+                        key="batch_default_bio"
+                    )
+                else:
+                    use_female_vault = False
+                    batch_website = None
+                    batch_default_name = None
+                    batch_default_bio = None
+                    
+            with col_b2:
+                batch_skip_existing = st.checkbox(
+                    "Skip already registered accounts (Recommended)",
+                    value=True,
+                    key="batch_skip_existing",
+                    help="Automatically skips accounts that are already registered in profiles.json without launching Chrome, preventing redundant logins and rate limits."
+                )
+                batch_concurrency = st.radio(
+                    "Bot Concurrency Pipeline",
+                    options=[1, 2],
+                    format_func=lambda c: "1 Bot (Sequential - Ultra Stable)" if c == 1 else f"{c} Bots in Parallel (Fast)",
+                    index=0,
+                    key="batch_concurrency_radio",
+                    help="Runs 1 bot sequentially or 2 bots concurrently with staggered launches"
+                )
+                batch_delay = st.slider(
+                    "Pacing Cooldown between Logins (seconds)",
+                    min_value=3,
+                    max_value=60,
+                    value=6,
+                    step=1,
+                    help="Cooldown interval before an individual bot worker picks up its next account",
+                    key="batch_delay_slider"
+                )
+                disp_info = "Windows Native Desktop" if sys.platform == "win32" else "display :0"
+                st.info(f"Display Pipeline: Executes Native Google Chrome via Patchright on {disp_info}.")
+                st.info("Community Seeding & In-Browser Joining: Automatically navigates to booster communities ('Free Trade (18+)' & 'Nude Trades (18+)'), accepts 18+ rules, and confirms membership directly inside the browser.")
+                
+            if batch_skip_existing and existing_accounts_count > 0:
+                btn_caption = f":material/playlist_play: Start Batch Provisioning ({new_accounts_count} New Accounts, {existing_accounts_count} Skipped)"
+            else:
+                btn_caption = f":material/playlist_play: Start Batch Provisioning ({len(parsed_batch)} Accounts with {batch_concurrency} Bots)"
+
+            start_batch_login = st.button(
+                btn_caption,
+                type="primary",
+                use_container_width=True,
+                disabled=len(parsed_batch) == 0 or (batch_skip_existing and new_accounts_count == 0),
+                key="btn_start_batch_login"
+            )
+            if batch_skip_existing and len(parsed_batch) > 0 and new_accounts_count == 0:
+                st.info(":material/check_circle: All pasted accounts are already active in `profiles.json`. Uncheck 'Skip already registered accounts' if you want to re-authenticate them.")
+            
+            if start_batch_login:
+                st.subheader(":material/terminal: Batch Execution Stream")
+                batch_progress = st.progress(0.0)
+                batch_status_box = st.status(f"Starting batch login for {len(parsed_batch)} account(s) using {batch_concurrency} bots...", expanded=True)
+                batch_log_placeholder = st.empty()
+                batch_messages = []
+                
+                def batch_ui_logger(msg):
+                    ts = time.strftime("%H:%M:%S")
+                    fmsg = f"[{ts}] {msg}"
+                    batch_messages.append(fmsg)
+                    batch_status_box.write(fmsg)
+                    batch_log_placeholder.text_area("Live Batch Output", value="\n".join(batch_messages), height=280)
+                    
+                def batch_ui_progress(curr, total, status_text):
+                    prog_val = curr / total if total > 0 else 1.0
+                    batch_progress.progress(prog_val)
+                    batch_status_box.update(label=f"[{curr}/{total}] {status_text}", state="running")
+                    
+                try:
+                    summary = account_login.batch_login_accounts(
+                        accounts_list=parsed_batch,
+                        default_name=batch_default_name if (batch_update_profile and batch_default_name) else None,
+                        default_bio=batch_default_bio if (batch_update_profile and batch_default_bio) else None,
+                        default_website=batch_website if batch_update_profile else None,
+                        use_female_vault=use_female_vault if batch_update_profile else False,
+                        update_profile=batch_update_profile,
+                        concurrency=batch_concurrency,
+                        delay_seconds=batch_delay,
+                        skip_existing=batch_skip_existing,
+                        log_fn=batch_ui_logger,
+                        progress_fn=batch_ui_progress
+                    )
+                    batch_progress.progress(1.0)
+                    
+                    succ_cnt = summary.get("success_count", 0)
+                    skip_cnt = summary.get("skipped_count", 0)
+                    fail_cnt = summary.get("failed_count", 0)
+                    
+                    if fail_cnt == 0:
+                        batch_status_box.update(label=f"Batch Complete: {succ_cnt} authenticated, {skip_cnt} skipped (already active).", state="complete", expanded=False)
+                        st.success(f"SUCCESS: Completed {summary['total']} accounts ({succ_cnt} newly authenticated, {skip_cnt} already active).")
+                    else:
+                        batch_status_box.update(label=f"Batch Finished: {succ_cnt} succeeded, {skip_cnt} skipped, {fail_cnt} failed.", state="error", expanded=True)
+                        st.warning(f"Batch completed with {fail_cnt} failure(s). Check logs above.")
+                        
+                    m1, m2, m3, m4 = st.columns(4)
+                    m1.metric("Total in Batch", summary["total"])
+                    m2.metric("Newly Authenticated", succ_cnt)
+                    m3.metric("Skipped (Active)", skip_cnt)
+                    m4.metric("Failed", fail_cnt)
+                    
+                    if summary.get("successful"):
+                        st.write("**:material/check_circle: Newly Authenticated Accounts:**")
+                        st.dataframe(summary["successful"], use_container_width=True)
+                        
+                    if summary.get("skipped"):
+                        with st.expander(f":material/skip_next: Skipped Active Accounts ({skip_cnt})", expanded=False):
+                            st.dataframe(summary["skipped"], use_container_width=True)
+                        
+                    if summary.get("failed"):
+                        st.write("**:material/error: Failed Accounts:**")
+                        st.dataframe(summary["failed"], use_container_width=True)
+                        
+                    st.info("Batch provisioning complete! Switch to the 'Manage Accounts' tab above to view your accounts.")
+                except Exception as b_exc:
+                    import traceback
+                    tb = traceback.format_exc()
+                    err_msg = str(b_exc).strip() or type(b_exc).__name__
+                    batch_status_box.update(label=f"Batch halted: {err_msg}", state="error", expanded=True)
+                    st.error(f"Error during batch execution: {err_msg}")
+                    st.code(tb, language="text")
+
+    with tab_auto:
+        disp_info = "Windows Native Desktop" if sys.platform == "win32" else "display :0"
+        st.subheader(":material/smart_toy: Automated Account Creator (HeroSMS)")
+        st.write(f"Autonomous Twitter / X account provisioner. Rents fresh US numbers from HeroSMS, executes registration via Join Flow with Native Google Chrome 155 via Patchright on {disp_info}, verifies SMS with enforced 20s+ delivery pacing, extracts session tokens, and seeds default booster communities.")
+        
+        st.divider()
+        
+        # Initialize blueprint state if missing
+        if "creator_blueprint" not in st.session_state:
+            st.session_state.creator_blueprint = account_creator.generate_random_profile()
+            st.session_state.creator_acc_id = account_creator.get_next_account_id()
+            
+        bp = st.session_state.creator_blueprint
+        
+        col_cfg1, col_cfg2 = st.columns([0.6, 0.4])
+        
+        with col_cfg1:
+            st.subheader(":material/badge: Account Blueprint")
+            c_id, c_name = st.columns(2)
+            target_id = c_id.text_input("Profile ID", value=st.session_state.creator_acc_id, help="Identifier used in profiles.json and user_data directory.")
+            target_name = c_name.text_input("Full Name", value=bp.get("name", "Jessica Miller"))
+            
+            c_user, c_pwd = st.columns(2)
+            target_username = c_user.text_input("Handle / Username", value=bp.get("username", "jessica_m102"))
+            target_password = c_pwd.text_input("Password", value=bp.get("password", "XPromo_Pass!8"), type="password")
+            
+            c_b1, c_b2, c_b3 = st.columns(3)
+            b_month = c_b1.text_input("Birth Month", value=bp.get("birth_month", "5"), disabled=True)
+            b_day = c_b2.text_input("Birth Day", value=bp.get("birth_day", "14"), disabled=True)
+            b_year = c_b3.text_input("Birth Year (18+)", value=bp.get("birth_year", "1999"), disabled=True)
+
+            target_auto_bio = st.text_area("Profile Bio", value=bp.get("bio", "soft spoken 18yo college girl ♡ your favorite distraction ↓"), height=75, help="Bio that will be populated on Twitter during onboarding or via profile settings.")
+            target_auto_website = st.text_input("Website URL", value=bp.get("website", "https://getmysocial.com/uwuscrettt"), help="Website link attached to profile.")
+            
+        with col_cfg2:
+            st.subheader(":material/settings_suggest: Registration Rules")
+            st.info("Pacing Rule: Strict minimum 20-second initial wait, then polling HeroSMS for up to 4 minutes (with auto-resends at 60s and 120s).")
+            st.info("Service Target: Twitter / X (US virtual phone line).")
+            st.info("Profile Setup: Automatically applies Display Name, Bio, and Website link directly via Twitter Settings.")
+            st.info("Community Seeding: Automatically pre-populates Free Trade (18+) and Nude Trades (18+).")
+            st.info(f"Display Pipeline: Executes stealth Chromium on {disp_info}.")
+            single_hero_engine = st.selectbox(
+                "Browser Engine",
+                ["Google Chrome (Default)", "Microsoft Edge", "Brave Browser"],
+                index=0,
+                key="single_hero_engine_sb"
+            )
+            single_hero_map = {
+                "Google Chrome (Default)": "chrome",
+                "Microsoft Edge": "msedge",
+                "Brave Browser": "brave"
+            }
+            chosen_hero_engine = single_hero_map.get(single_hero_engine, "chrome")
+            
+        col_act1, col_act2 = st.columns([0.3, 0.7])
+        if col_act1.button(":material/shuffle: Randomize Credentials", use_container_width=True):
+            st.session_state.creator_blueprint = account_creator.generate_random_profile()
+            st.session_state.creator_acc_id = account_creator.get_next_account_id()
+            st.rerun()
+            
+        start_creation = col_act2.button(":material/rocket_launch: Start Automated Account Creation", type="primary", use_container_width=True)
+        
+        st.divider()
+        
+        if start_creation:
+            st.subheader(":material/terminal: Execution Live Stream")
+            status_box = st.status(f"Starting account creation pipeline for [{target_id}]...", expanded=True)
+            log_placeholder = st.empty()
+            log_messages = []
+            
+            def ui_logger(msg):
+                ts = time.strftime("%H:%M:%S")
+                formatted_msg = f"[{ts}] {msg}"
+                log_messages.append(formatted_msg)
+                status_box.write(formatted_msg)
+                log_placeholder.text_area("Live Output Log", value="\n".join(log_messages), height=260)
+                
+            captcha_placeholder = st.empty()
+            
+            try:
+                if os.path.exists(f"captcha_{target_id}.png"):
+                    try: os.remove(f"captcha_{target_id}.png")
+                    except Exception: pass
+                    
+                with st.spinner("Automating HeroSMS rental and X registration..."):
+                    import importlib
+                    importlib.reload(account_creator)
+                    created_profile = account_creator.create_twitter_account(
+                        custom_id=target_id,
+                        custom_name=target_name,
+                        custom_username=target_username,
+                        custom_password=target_password,
+                        bio=target_auto_bio,
+                        website=target_auto_website,
+                        log_fn=ui_logger,
+                        browser_engine=chosen_hero_engine
+                    )
+                    
+                status_box.update(label=f"Account [{target_id}] successfully created and registered!", state="complete", expanded=False)
+                st.success(f"SUCCESS: Account [{target_id}] (@{created_profile['username']}) successfully created!")
+                
+                # Display results card
+                st.subheader(":material/verified: Registered Account Summary")
+                r1, r2, r3, r4 = st.columns(4)
+                r1.metric("Profile ID", created_profile.get("id"))
+                r2.metric("Handle", f"@{created_profile.get('username')}")
+                r3.metric("Phone", created_profile.get("phone", "N/A"))
+                r4.metric("Session Token", "Captured" if created_profile.get("auth_token") else "Pending")
+                
+                # Reset blueprint for next account
+                st.session_state.creator_blueprint = account_creator.generate_random_profile()
+                st.session_state.creator_acc_id = account_creator.get_next_account_id()
+                
+                st.info("Account created! Switch to the 'Manage Accounts' tab above to view your new profile.")
+                    
+            except Exception as exc:
+                status_box.update(label=f"Creation pipeline halted: {exc}", state="error", expanded=True)
+                st.error(f"Error during account creation: {exc}")
+                if os.path.exists(f"captcha_{target_id}.png"):
+                    st.warning("Arkose Labs Captcha Challenge was detected:")
+                    st.image(f"captcha_{target_id}.png", caption="Captcha Screen Capture", use_container_width=True)
+
+    with tab_email:
+        disp_info = "Windows Native Desktop" if sys.platform == "win32" else "display :0"
+        st.subheader(":material/alternate_email: Account Creator via Email Alias (Interactive Verification)")
+        st.write(f"Provision Twitter / X accounts using email aliases that route directly into your primary Gmail inbox (e.g. Gmail Plus addressing or stealth dot tricks). Powered by the exact native Google Chrome stealth patch pipeline from Multi-Account Batch Onboarding on {disp_info} with hardware GPU rendering.")
+        
+        email_prov_mode = st.radio(
+            "Provisioning Pipeline Mode",
+            options=[":material/person: Single Account Creation", ":material/timer: Hourly Paced Batch Provisioning"],
+            horizontal=True,
+            key="email_prov_mode"
+        )
+        
+        st.divider()
+        
+        if email_prov_mode == ":material/person: Single Account Creation":
+            if "email_creator_blueprint" not in st.session_state:
+                st.session_state.email_creator_blueprint = account_creator.generate_random_profile()
+                st.session_state.email_creator_acc_id = account_creator.get_next_account_id()
+                
+            ebp = st.session_state.email_creator_blueprint
+            
+            col_e1, col_e2 = st.columns([0.55, 0.45])
+            
+            with col_e1:
+                st.subheader(":material/badge: Alias & Blueprint Settings")
+                base_email = st.text_input(
+                    "Primary Base Gmail Address",
+                    value=st.session_state.get("email_base_address", "davidosili93@gmail.com"),
+                    help="All verification emails sent to aliases will land in this inbox.",
+                    key="input_base_email"
+                )
+                st.session_state.email_base_address = base_email
+                
+                strat_choice = st.radio(
+                    "Email Alias Strategy",
+                    options=["Gmail Plus Addressing (+tag)", "Gmail Dot Trick (d.avido...)", "Custom Alias"],
+                    index=1,
+                    horizontal=True,
+                    help="Plus: user+tag@gmail.com. Dot Trick: stealthy period permutations (no plus sign) that Gmail delivers to the exact same inbox.",
+                    key="email_strat_radio"
+                )
+                
+                strat_key = "dot" if "Dot" in strat_choice else ("custom" if "Custom" in strat_choice else "plus")
+                
+                target_e_id = st.text_input("Profile ID", value=st.session_state.email_creator_acc_id, help="Identifier used in profiles.json and user_data directory.", key="input_email_acc_id")
+                
+                if strat_key == "custom":
+                    custom_alias_val = st.text_input("Custom Email Alias", value=f"davido.sili93+{target_e_id.replace(' ', '_')}@gmail.com")
+                    active_alias = custom_alias_val.strip()
+                else:
+                    active_alias = email_alias_manager.get_or_create_alias_for_account(
+                        target_e_id, base_email=base_email, strategy=strat_key
+                    )
+                    
+                c_en1, c_en2 = st.columns(2)
+                target_e_name = c_en1.text_input("Full Name", value=ebp.get("name", "Jessica Miller"))
+                target_e_user = c_en2.text_input("Desired Handle / Username", value=ebp.get("username", "jessica_m102"))
+                
+                target_e_pwd = st.text_input("Password", value=ebp.get("password", "XPromo_Pass!8"), type="password")
+
+                default_bio = ebp.get("bio", "")
+                if not default_bio:
+                    try:
+                        default_bio = female_profile_vault.get_random_female_bio()
+                    except Exception:
+                        default_bio = "Living life with positive vibes ✨ | DM open 💬"
+                target_e_bio = st.text_area("Profile Bio", value=default_bio, height=75, help="Bio that will be populated on Twitter during onboarding or via profile edit.")
+
+            with col_e2:
+                st.subheader(":material/mail: Live Alias Blueprint")
+                st.success(f"**Target Email Alias:** `{active_alias}`")
+                st.caption(f"↳ Forwarded/Delivered to primary inbox: **{base_email}**")
+                
+                st.subheader(":material/tune: Profile Customization & Stealth Stack")
+                use_f_vault = st.checkbox("Auto-pick Name & Bio from Female Vault", value=True, help="Picks from 35 curated female names and aesthetic bios.")
+                attach_web = st.checkbox("Attach Website Link", value=True, help="Adds promotional link to profile website field.")
+                promo_url = st.text_input("Website URL", value="https://getmysocial.com/uwuscrettt", disabled=not attach_web)
+                use_hero_fallback = st.checkbox("Auto-rent HeroSMS number if Twitter requests phone verification", value=True, help="If Twitter requires a phone number on web, the bot will automatically rent a fresh US number from HeroSMS and verify.")
+                
+                single_email_engine = st.selectbox(
+                    "Browser Engine",
+                    ["Google Chrome (Default)", "Microsoft Edge", "Brave Browser"],
+                    index=0,
+                    key="single_email_engine_sb"
+                )
+                single_email_map = {
+                    "Google Chrome (Default)": "chrome",
+                    "Microsoft Edge": "msedge",
+                    "Brave Browser": "brave"
+                }
+                chosen_email_engine = single_email_map.get(single_email_engine, "chrome")
+                st.info(f"**Stealth Patch Engine Active**:\n- Engine: {single_email_engine} via Patchright\n- Hardware GPU {disp_info}\n- `STRIP_AUTOMATION_ARGS` active")
+                
+            col_btn1, col_btn2 = st.columns([0.35, 0.65])
+            if col_btn1.button(":material/shuffle: Randomize Credentials", key="btn_rand_email", use_container_width=True):
+                st.session_state.email_creator_blueprint = account_creator.generate_random_profile()
+                st.session_state.email_creator_acc_id = account_creator.get_next_account_id()
+                st.rerun()
+                
+            start_email_reg = col_btn2.button(":material/rocket_launch: Start Email Alias Registration", type="primary", key="btn_start_email_reg", use_container_width=True)
+            
+            st.divider()
+            
+            # Check active session in session_state
+            if "email_reg_session" not in st.session_state:
+                st.session_state.email_reg_session = None
+
+            if start_email_reg:
+                import importlib
+                importlib.reload(account_creator_email)
+                session = account_creator_email.EmailRegistrationSession(
+                    account_id=target_e_id,
+                    base_email=base_email,
+                    strategy=strat_key,
+                    custom_name=target_e_name,
+                    custom_username=target_e_user,
+                    custom_password=target_e_pwd,
+                    custom_bio=target_e_bio,
+                    custom_website=promo_url if attach_web else "",
+                    auto_vault=use_f_vault,
+                    use_herosms_fallback=use_hero_fallback,
+                    use_cdp=(chosen_email_engine == "chrome"),
+                    browser_engine=chosen_email_engine,
+                    log_fn=lambda msg: print(f"[{time.strftime('%H:%M:%S')}] {msg}")
+                )
+                session.start_background()
+                st.session_state.email_reg_session = session
+                st.rerun()
+
+            sess = st.session_state.email_reg_session
+            if sess is not None:
+                st.subheader(":material/terminal: Execution Live Stream")
+                status_state = "complete" if sess.status == "success" else ("error" if sess.status == "failed" else "running")
+                status_box = st.status(f"Status: [{sess.status.upper()}] - {sess.status_detail}", expanded=True, state=status_state)
+                
+                # Interactive verification code entry card
+                if sess.status == "awaiting_code":
+                    code_type = getattr(sess, "code_type", "email")
+                    code_recipient = getattr(sess, "code_recipient", sess.alias_email)
+                    if code_type == "sms":
+                        st.warning(":material/sms: SMS Verification Code Sent!")
+                        st.markdown(f"Twitter / X has dispatched a 6-digit confirmation code via SMS to your rented phone: **`{code_recipient}`** (HeroSMS).")
+                        st.markdown("**If you see the incoming code on HeroSMS or in the logs, enter it below to finalize account creation:**")
+                    else:
+                        st.warning(":material/mark_email_unread: Email Verification Code Sent!")
+                        st.markdown(f"Twitter / X has dispatched a 6-digit confirmation code to **`{sess.alias_email}`** (arriving in your **`{sess.base_email}`** inbox).")
+                        st.markdown("**Please check your email inbox and enter the code below to finalize account creation:**")
+                    
+                    code_col1, code_col2, code_col3 = st.columns([0.5, 0.3, 0.2])
+                    user_code_input = code_col1.text_input("6-Digit Verification Code", key="input_interactive_code", placeholder="e.g. 583921", max_chars=10)
+                    
+                    if code_col2.button(":material/send: Submit Verification Code", type="primary", key="btn_submit_verif_code", use_container_width=True):
+                        if user_code_input.strip():
+                            sess.provide_verification_code(user_code_input.strip())
+                            st.rerun()
+                        else:
+                            st.error("Please enter the verification code first.")
+                            
+                    if code_col3.button(":material/cancel: Cancel", key="btn_cancel_verif", use_container_width=True):
+                        sess.cancel()
+                        st.session_state.email_reg_session = None
+                        st.rerun()
+
+                    st.caption(":material/smart_toy: Bot is also monitoring HeroSMS autonomously in parallel. If HeroSMS receives the code automatically, it will proceed immediately without requiring manual entry.")
+                    
+                    if not user_code_input.strip():
+                        time.sleep(3)
+                        if sess.status != "awaiting_code":
+                            st.rerun()
+                        
+                elif sess.status == "awaiting_phone":
+                    st.info(":material/phone_android: Twitter Platform Requirement: Phone Verification Step")
+                    st.markdown(f"Twitter JoinFlow accepted your email alias (**`{sess.alias_email}`**) and is requesting a phone number to complete web onboarding.")
+                    st.caption(f"You can observe the active Chrome session on {disp_info}, or use HeroSMS for automated phone rentals.")
+                    if st.button(":material/cancel: Dismiss / Cancel", key="btn_cancel_phone_step", use_container_width=True):
+                        sess.cancel()
+                        st.session_state.email_reg_session = None
+                        st.rerun()
+
+                elif sess.status in ["running", "completing"]:
+                    st.info(f"Bot working: {sess.status_detail}")
+                    time.sleep(2)
+                    st.rerun()
+                    
+                elif sess.status == "success":
+                    st.success(f"SUCCESS: Account [{sess.account_id}] (@{sess.result_profile.get('username')}) created and registered!")
+                    r1, r2, r3, r4 = st.columns(4)
+                    r1.metric("Profile ID", sess.result_profile.get("id"))
+                    r2.metric("Handle", f"@{sess.result_profile.get('username')}")
+                    r3.metric("Email Alias", sess.result_profile.get("email"))
+                    r4.metric("Session Token", "Captured" if sess.result_profile.get("auth_token") else "Pending")
+                    
+                    if st.button(":material/add_circle: Register Another Account", key="btn_reset_email_sess"):
+                        st.session_state.email_reg_session = None
+                        st.session_state.email_creator_blueprint = account_creator.generate_random_profile()
+                        st.session_state.email_creator_acc_id = account_creator.get_next_account_id()
+                        st.rerun()
+                        
+                elif sess.status == "failed":
+                    st.error(f"Registration failed: {sess.error_message}")
+                    if st.button(":material/refresh: Dismiss & Retry", key="btn_clear_failed_sess"):
+                        st.session_state.email_reg_session = None
+                        st.rerun()
+                        
+                # Show screenshot if available
+                if sess.last_screenshot and os.path.exists(sess.last_screenshot):
+                    st.image(sess.last_screenshot, caption=f"Live Browser Screen ({sess.status})", use_container_width=True)
+        else:
+            render_batch_creator_ui(default_method="email_alias", key_prefix="batch_email_")
+
+        # Stored Aliases Vault
+        with st.expander(":material/list_alt: Stored Email Aliases Vault (`email_aliases.json`)"):
+            all_aliases = email_alias_manager.load_aliases()
+            if all_aliases:
+                st.dataframe(
+                    [
+                        {
+                            "Account ID": v.get("account_id", k),
+                            "Email Alias": v.get("alias", ""),
+                            "Base Email": v.get("base_email", ""),
+                            "Strategy": v.get("strategy", ""),
+                            "Created At": v.get("created_at", "")
+                        }
+                        for k, v in all_aliases.items()
+                    ],
+                    use_container_width=True
+                )
+            else:
+                st.info("No email aliases registered yet.")
+
+    with tab_batch:
+        st.subheader(":material/timer: Paced Batch Account Creator (Hourly Automation)")
+        st.write("Autonomous multi-account provisioner with natural anti-detection pacing. Creates accounts at an hourly interval with randomized human jitter to safely build your bot network without triggering IP velocity traps or Arkose verification spikes.")
+        st.divider()
+        render_batch_creator_ui(default_method="herosms", key_prefix="batch_tab_")
+

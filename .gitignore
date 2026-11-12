@@ -28,6 +28,9 @@ daily_post_history.json
 login_needed.json
 saved_drafts.json
 scheduled_queue.json
+batch_creator_status.json
+email_aliases.json
+history_log.json
 
 # Temp Directories
 scheduled_uploads/

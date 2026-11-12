@@ -51,33 +51,47 @@ def record_community_post(p_id, comm_url):
             json.dump(history, f)
 
 def is_session_locked(user_data_dir):
+    if not user_data_dir or not os.path.exists(user_data_dir):
+        return False
     lock_file = os.path.join(user_data_dir, "SingletonLock")
-    if os.path.lexists(lock_file):
+    if not os.path.exists(lock_file):
+        return False
+    if sys.platform == "win32":
         try:
-            target = os.readlink(lock_file)
-            parts = target.rsplit('-', 1)
-            if len(parts) == 2:
-                pid = int(parts[1])
+            os.remove(lock_file)
+            cookie_file = os.path.join(user_data_dir, "SingletonCookie")
+            if os.path.exists(cookie_file):
+                try: os.remove(cookie_file)
+                except Exception: pass
+            return False
+        except (PermissionError, OSError):
+            return True
+    else:
+        if os.path.lexists(lock_file):
+            try:
+                target = os.readlink(lock_file)
+                parts = target.rsplit('-', 1)
+                if len(parts) == 2:
+                    pid = int(parts[1])
+                    try:
+                        os.kill(pid, 0)
+                        return True # Process is still alive and locked
+                    except OSError:
+                        # Process is dead, safe to remove lock
+                        pass
+                # If we reach here, process is dead or we couldn't parse PID
                 try:
-                    os.kill(pid, 0)
-                    return True # Process is still alive and locked
-                except OSError:
-                    # Process is dead, safe to remove lock
-                    pass
-            # If we reach here, process is dead or we couldn't parse PID
-            try:
-                os.remove(lock_file)
-                cookie_file = os.path.join(user_data_dir, "SingletonCookie")
-                if os.path.lexists(cookie_file):
-                    os.remove(cookie_file)
-            except: pass
-            return False
-        except Exception as e:
-            log(f"Warning: Could not parse lock file, forcing removal: {e}")
-            try:
-                os.remove(lock_file)
-            except: pass
-            return False
+                    os.remove(lock_file)
+                    cookie_file = os.path.join(user_data_dir, "SingletonCookie")
+                    if os.path.lexists(cookie_file):
+                        os.remove(cookie_file)
+                except: pass
+                return False
+            except Exception as e:
+                try:
+                    os.remove(lock_file)
+                except: pass
+                return False
     return False
 
 

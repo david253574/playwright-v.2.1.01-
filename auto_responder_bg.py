@@ -13,9 +13,14 @@ def human_pause(min_s=1.0, max_s=3.0):
     time.sleep(random.uniform(min_s, max_s))
 
 def is_session_locked(user_data_dir):
-    if not user_data_dir: return False
+    if not user_data_dir or not os.path.exists(user_data_dir): return False
     lock_file = os.path.join(user_data_dir, "SingletonLock")
-    return os.path.exists(lock_file)
+    if not os.path.exists(lock_file): return False
+    try:
+        os.remove(lock_file)
+        return False
+    except (PermissionError, OSError):
+        return True
 
 def process_auto_responder_bg(profile, universal_msg, check_priority=True, check_hidden=True, unlock_password="2004", skip_older_than_hours=2.0):
     """Auto-replies to messages in Priority and Hidden tabs silently."""
