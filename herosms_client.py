@@ -5,9 +5,10 @@ import random
 import string
 from playwright.sync_api import sync_playwright
 
-HEROSMS_DASHBOARD_URL = "https://herosms-va-portal.vercel.app/dashboard"
-HEROSMS_LOGIN_URL = "https://herosms-va-portal.vercel.app/login"
-HEROSMS_REGISTER_URL = "https://herosms-va-portal.vercel.app/register"
+HEROSMS_BASE_URL = os.getenv("HEROSMS_BASE_URL", "https://sms.15.204.121.17.nip.io").rstrip("/")
+HEROSMS_DASHBOARD_URL = f"{HEROSMS_BASE_URL}/dashboard"
+HEROSMS_LOGIN_URL = f"{HEROSMS_BASE_URL}/login"
+HEROSMS_REGISTER_URL = f"{HEROSMS_BASE_URL}/register"
 
 class HeroSMSClient:
     def __init__(self, email=None, password=None, min_wait_secs=20, max_wait_secs=240, user_data_dir="./user_data/herosms_session"):
